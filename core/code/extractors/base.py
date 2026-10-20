@@ -106,7 +106,7 @@ class BaseExtractor(ABC):
             self._parser = tree_sitter_languages.get_parser(self.tree_sitter_language)
         return self._parser
 
-    def parse(self, source_code: str) -> "tree_sitter.Tree":
+    def parse(self, source_code: str) -> "tree_sitter.Tree":  # noqa: F821 (optional dependency, never evaluated)
         """Parse source code into an AST."""
         return self.parser.parse(bytes(source_code, "utf-8"))
 

@@ -1,6 +1,6 @@
 # Trove Roadmap
 
-Stages 0-11 are complete — see [CHANGELOG.md](CHANGELOG.md) for details. This roadmap covers the next phase: extensibility, API, web UI, distribution, and commercial readiness.
+Stages 0-11 are complete — see [CHANGELOG.md](CHANGELOG.md) for details. This roadmap covers the next phase: extensibility, API, web UI and distribution.
 
 Each stage is independently valuable and testable. One stage = one concept.
 
@@ -202,21 +202,6 @@ Each stage is independently valuable and testable. One stage = one concept.
 
 ---
 
-## Stage 10: Commercial Features
-
-**Goal:** Licensing, auto-updates, and opt-in telemetry for commercial distribution.
-
-**Design:** not published yet.
-
-- **License keys** — Ed25519-signed offline license files (email, expiry, feature flags). API middleware validates. Unlicensed mode limited to 1 client, 100 chunks.
-- **Auto-updates** — version check on startup, separate stable/beta channels
-- **Telemetry** — opt-in anonymous usage stats, disabled by default
-- **Branding** — app name, icon, favicon (decide at implementation time)
-
-**Depends on:** Stages 2-7 (API + UI must exist to license/distribute)
-
----
-
 ## Dependency Graph
 
 ```
@@ -229,41 +214,10 @@ Each stage is independently valuable and testable. One stage = one concept.
                                  8 (Events) — retrofit real-time into screens
                                        ↓
                                  9 (Distribution)
-                                       ↓
-                                 10 (Commercial)
 ```
 
 Stages 4-7 are independent of each other — build in any order or in parallel.
 Stage 8 (Events) can be built at any point, but maximum value comes after the UI screens exist.
-
----
-
-## Effort Estimates (AI-Assisted Pair Model)
-
-Estimates assume the working pattern from the completed stages: Claude writes code, user reviews and runs tests. A "session" is ~2-3 hours of focused work.
-
-| Stage | Concept | AI Generates | You Review/Debug | You Do Solo | Sessions | Notes |
-|-------|---------|-------------|-----------------|-------------|----------|-------|
-| 1 | Plugin System | ~1.5h | ~1h | — | **1** | Mostly boilerplate ABCs. Refactoring built-ins is the bulk. |
-| 2 | REST API | ~4h | ~3h | ~1h (manual API testing) | **3** | Lots of routes but all follow same pattern. Static file serving is trivial. |
-| 3 | Web UI Foundation | ~4h | ~3h | ~2h (Vite/React setup, visual polish) | **3-4** | React + Tailwind + shadcn/ui is well-trodden. Less friction than Flutter Desktop was. |
-| 4 | Search UI | ~2h | ~2h | ~1h (visual tweaks) | **2** | Once Stage 3 is done, adding screens is fast. |
-| 5 | Client & Source Mgmt | ~4h | ~2h | ~2h (wizard UX, drag-drop) | **3** | Most complex screen — CRUD, sources, wizard, file management. |
-| 6 | Graph Explorer | ~3h | ~2h | ~3h (D3 tuning, large graph perf) | **3** | D3.js is mature but graph rendering is inherently visual work. |
-| 7 | Agent Chat | ~2h | ~2h | ~1h (UX feel) | **2** | Straightforward — react-markdown + Shiki handle the hard parts. |
-| 8 | Event System | ~1.5h | ~1h | — | **1** | Self-contained. Retrofit into existing WebSocket endpoints. |
-| 9 | Distribution | ~2h | ~2h | ~4h (Docker, PyInstaller debugging) | **3** | Docker is easy. PyInstaller is the wildcard (torch/chromadb bundling). |
-| 10 | Commercial | ~2h | ~1h | ~2h (key generation, update testing) | **2** | Much simpler without native platform installers. |
-| | **Totals** | **~26h** | **~21h** | **~16h** | **~23-25** | |
-
-### Key observations
-
-- **Stages 1-2 (Python backend):** ~4 sessions. Familiar territory.
-- **Stages 3-7 (Web UI):** ~13-14 sessions. React/TypeScript/Tailwind is a well-known stack — much less friction than Flutter Desktop. Stage 3 is the foundation; Stages 4-7 get progressively faster.
-- **Stage 8 (Events):** ~1 session. Quick retrofit.
-- **Stages 9-10 (Distribution + Commercial):** ~5 sessions. Docker-first makes this much simpler than native platform installers.
-- **Total: ~23-25 sessions.** At 2-3 sessions per week, roughly **9-13 weeks.** At full-time pace, ~6-7 weeks.
-- **The web stack saves ~6-7 sessions** vs the original Flutter plan (no Flutter SDK setup, no Dart learning curve, no platform-specific build issues, simpler distribution).
 
 ---
 

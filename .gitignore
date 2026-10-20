@@ -1,0 +1,161 @@
+# =============================================================================
+# Trove .gitignore
+# =============================================================================
+
+# Watcher State
+watcher_state.json
+
+# -----------------------------------------------------------------------------
+# Client Data - NEVER commit client documents or databases
+# -----------------------------------------------------------------------------
+
+# Client documents (source files - confidential)
+clients/*/documents/
+
+# Vector database and index files (generated, large)
+clients/*/index/
+
+# Client Chat Data
+clients/*/data/
+
+# Source connector data (cloned repos, crawled sites - auto-generated)
+clients/*/sources/
+
+# Processed/cached data
+clients/*/processed/
+clients/*/cache/
+
+# -----------------------------------------------------------------------------
+# Python
+# -----------------------------------------------------------------------------
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+
+# -----------------------------------------------------------------------------
+# ML/AI Models and Caches
+# -----------------------------------------------------------------------------
+
+# Sentence transformers cache
+.cache/
+*.bin
+*.safetensors
+
+# Model downloads (can be re-downloaded)
+models/
+
+
+# -----------------------------------------------------------------------------
+# Tool State (local, auto-generated)
+# -----------------------------------------------------------------------------
+
+.omc/
+.playwright-mcp/
+
+# -----------------------------------------------------------------------------
+# IDE and Editor
+# -----------------------------------------------------------------------------
+
+# VSCode
+.vscode/
+*.code-workspace
+
+# PyCharm
+.idea/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# -----------------------------------------------------------------------------
+# OS Generated
+# -----------------------------------------------------------------------------
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux
+*~
+
+# -----------------------------------------------------------------------------
+# Logs and Temp Files
+# -----------------------------------------------------------------------------
+
+# Logs
+*.log
+logs/
+
+# Temp files
+*.tmp
+*.temp
+.tmp/
+
+# -----------------------------------------------------------------------------
+# Environment and Secrets
+# -----------------------------------------------------------------------------
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+*.env
+
+# API keys and secrets
+secrets/
+*.pem
+*.key
+
+# -----------------------------------------------------------------------------
+# Testing
+# -----------------------------------------------------------------------------
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# -----------------------------------------------------------------------------
+# Exports (user-generated, may contain sensitive data)
+# -----------------------------------------------------------------------------
+
+exports/
+*.export.md
+*.export.json

@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "trove": {
+      "command": "python",
+      "args": ["/path/to/trove/scripts/mcp_server.py"],
+      "env": {
+        "TROVE_DEFAULT_CLIENT": "your_client_name"
+      }
+    }
+  }
+}

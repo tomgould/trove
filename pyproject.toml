@@ -1,0 +1,89 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trove-knowledge-engine"
+version = "0.1.0"
+description = "A local-first knowledge engine with hybrid search, source connectors, plugin extensibility, and MCP integration for Claude Code."
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Tom Gould"},
+]
+keywords = ["rag", "search", "knowledge-engine", "mcp", "embeddings", "bm25"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Text Processing :: Indexing",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    "unstructured[all-docs]>=0.12.0",
+    "sentence-transformers>=2.2.0",
+    "chromadb>=0.4.0",
+    "rank-bm25>=0.2.2",
+    "openai>=1.0.0",
+    "anthropic>=0.18.0",
+    "nltk>=3.8.0",
+    "networkx>=3.0",
+    "pyyaml>=6.0",
+    "python-dotenv>=1.0.0",
+    "mcp>=1.0.0,<2",
+    "tree-sitter>=0.21.0,<0.22.0",
+    "tree-sitter-languages>=1.10.0",
+    "httpx>=0.25.0",
+    "markdownify>=0.11.0",
+    "trafilatura>=1.6.0",
+    "psutil>=5.9.0",
+    "requests>=2.28.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "ruff>=0.4.0",
+    "pre-commit>=3.0.0",
+]
+
+[project.scripts]
+trove-server = "scripts.mcp_server:main"
+
+[tool.setuptools.packages.find]
+include = ["core*", "mcp_server*", "scripts*"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # isort
+    "B",     # flake8-bugbear
+    "S",     # flake8-bandit (security)
+    "UP",    # pyupgrade
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+    "S101",  # assert usage (used in tests and whitelist checks)
+    "S603",  # subprocess without shell=True (intentional in git_ops)
+    "S607",  # partial executable path (git is expected in PATH)
+    "B008",  # function call in default arg (used in FastAPI patterns)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S105", "S106"]
+"scripts/*" = ["S603", "S607"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q --tb=short"

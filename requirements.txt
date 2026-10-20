@@ -1,0 +1,47 @@
+# Trove Requirements
+# All open source (Apache 2.0 or MIT)
+
+# Document Processing
+unstructured[all-docs]>=0.12.0    # Document parsing (Apache 2.0)
+
+# Search & Embeddings
+sentence-transformers>=2.2.0      # Embeddings + cross-encoder re-ranking (Apache 2.0)
+chromadb>=0.4.0                   # Vector database (Apache 2.0)
+rank-bm25>=0.2.2                  # BM25 keyword search (Apache 2.0)
+
+# LLM Clients
+openai>=1.0.0                     # LM Studio client (MIT)
+anthropic>=0.18.0                 # Claude API client (MIT)
+
+# NLP / Tokenization
+nltk>=3.8.0                       # Stemming and NLP utilities (Apache 2.0)
+
+# Knowledge Graph
+networkx>=3.0                     # Graph data structure and algorithms (BSD)
+
+# Utilities
+pyyaml>=6.0                       # Config parsing (MIT)
+python-dotenv>=1.0.0              # Environment variables (BSD)
+
+# Web crawling and GitHub connector
+httpx>=0.25.0                     # HTTP client for the GitHub API and crawler (BSD)
+markdownify>=0.11.0               # HTML to Markdown (MIT)
+trafilatura>=1.6.0                # Main-content extraction (Apache 2.0)
+
+# System
+psutil>=5.9.0                     # Resource manager (BSD)
+requests>=2.28.0                  # Retry helpers and API calls (Apache 2.0)
+
+# Testing
+pytest>=7.0.0                     # Test framework (MIT)
+
+# MCP Server
+mcp>=1.0.0,<2                        # Model Context Protocol server (MIT)
+
+# Code Indexing
+tree-sitter>=0.21.0,<0.22.0       # Parser generator for code (MIT) - pinned for tree-sitter-languages compat
+tree-sitter-languages>=1.10.0     # Pre-built parsers for many languages (MIT)
+
+# Optional: Alternative vector DBs with native hybrid search
+# lancedb>=0.4.0                  # If switching from ChromaDB (Apache 2.0)
+# qdrant-client>=1.7.0            # If switching from ChromaDB (Apache 2.0)

@@ -1,0 +1,55 @@
+name: "Example Project"
+machine_name: example
+description: "Example client configuration — copy this to create your own"
+
+paths:
+  documents: "documents"
+  index: "index"
+  prompts: "prompts"
+
+embedding:
+  model: all-MiniLM-L6-v2      # Fast, good quality. Use bge-base-en-v1.5 (768d) for better semantic search
+  dimension: 384                # Must match model (384 for MiniLM, 768 for bge-base)
+  hnsw_ef_search: 100           # Higher = better recall, slower search
+
+search:
+  bm25_weight: 0.5              # Keyword search weight
+  vector_weight: 0.5            # Semantic search weight
+  top_k: 20                     # Results to return
+  rerank_top_n: 50              # Candidates for cross-encoder reranking
+  min_score: null               # null=no filter, set -2.0 for strict relevance
+  merge_strategy: "weighted"    # "weighted" or "rrf" (Reciprocal Rank Fusion)
+  score_normalization: "minmax" # "minmax", "zscore", or "raw"
+  adaptive_rerank: true
+  cache_ttl: 300                # Search cache TTL in seconds (0 = disabled)
+
+llm:
+  provider: "lmstudio"                                    # OpenAI-compatible (LM Studio)
+  lmstudio_model: "mistralai/mistral-nemo-instruct-2407"  # Must match loaded model
+  max_context_chars: 12000
+  max_chunks: 10
+  max_tokens: 2000
+
+chunking:
+  strategy: "title"             # "title", "semantic", or "recursive"
+  max_chunk_size: 1500
+  overlap: 100
+
+# Uncomment to enable knowledge graph:
+# graph:
+#   enabled: true
+
+# Uncomment to enable code indexing:
+# code:
+#   enabled: true
+#   extensions: [py, js, ts, tsx]
+
+# Uncomment to connect sources:
+# sources:
+#   github:
+#     - owner: myorg
+#       token_env: GITHUB_TOKEN
+#   web:
+#     - url: https://docs.example.com
+#       mode: crawl
+#       max_pages: 100

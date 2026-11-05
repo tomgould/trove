@@ -1193,3 +1193,41 @@ class TestCorpusHashSampling:
         hash2 = searcher._compute_corpus_hash()
 
         assert hash1 != hash2
+
+
+class TestSourceFilter:
+    """Regression: source_filter compared metadata["source"], but chunks store "source_file"."""
+
+    @staticmethod
+    def _chunk(chunk_id, source_file, score):
+        return {
+            "id": chunk_id,
+            "content": f"content of {source_file}",
+            "metadata": {"source_file": source_file},
+            "score": score,
+        }
+
+    def test_filter_by_source_matches_source_file(self):
+        from core.search.searcher import filter_by_source
+
+        chunks = [self._chunk("1", "a.md", 1.0), self._chunk("2", "b.md", 0.5)]
+        assert [c["id"] for c in filter_by_source(chunks, ["b.md"])] == ["2"]
+
+    def test_filter_by_source_falls_back_to_source_key(self):
+        from core.search.searcher import filter_by_source
+
+        chunks = [{"id": "1", "metadata": {"source": "a.md"}}, {"id": "2", "metadata": {}}]
+        assert [c["id"] for c in filter_by_source(chunks, ["a.md"])] == ["1"]
+
+    def test_fast_search_applies_source_filter(self):
+        from core.search import HybridSearcher
+
+        searcher = object.__new__(HybridSearcher)
+        searcher.merge_strategy = "rrf"
+        searcher.rrf_k = 60
+        hits = [self._chunk("1", "a.md", 1.0), self._chunk("2", "b.md", 0.9), self._chunk("3", "c.md", 0.8)]
+        searcher._bm25_search = lambda query, k: [(dict(h), h["score"]) for h in hits]
+        searcher._vector_search = lambda query, k: [(dict(h), h["score"]) for h in hits]
+
+        results = searcher.fast_search("anything", top_k=5, source_filter=["a.md", "c.md"])
+        assert sorted(r["metadata"]["source_file"] for r in results) == ["a.md", "c.md"]

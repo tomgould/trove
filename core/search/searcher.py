@@ -35,6 +35,18 @@ from core.search.cache import SearchCache, BM25_CACHE_FILENAME
 logger = logging.getLogger(__name__)
 
 
+
+def chunk_source(chunk: dict) -> str:
+    """The file a chunk came from. Chunks store it as ``source_file``."""
+    metadata = chunk.get("metadata") or {}
+    return metadata.get("source_file") or metadata.get("source") or ""
+
+
+def filter_by_source(chunks: list[dict], source_filter) -> list[dict]:
+    """Keep only chunks whose source file is in ``source_filter``."""
+    allowed = set(source_filter)
+    return [c for c in chunks if chunk_source(c) in allowed]
+
 class HybridSearcher:
     """
     Hybrid search combining BM25 keyword and vector semantic search.
@@ -1060,7 +1072,7 @@ class HybridSearcher:
 
         # Apply source filter if provided
         if source_filter is not None:
-            merged = [c for c in merged if c.get("metadata", {}).get("source", "") in source_filter]
+            merged = filter_by_source(merged, source_filter)
 
         logger.debug(f"Fast search completed in {time.time() - t0:.2f}s ({len(merged)} results)")
 
@@ -1365,7 +1377,7 @@ class HybridSearcher:
         # Step 5b: Filter by source files (if source_filter provided)
         if source_filter is not None:
             before_filter = len(reranked)
-            reranked = [c for c in reranked if c.get("metadata", {}).get("source", "") in source_filter]
+            reranked = filter_by_source(reranked, source_filter)
             filtered_count = before_filter - len(reranked)
             if filtered_count > 0:
                 logger.info(f"Filtered {filtered_count} chunks by source selection ({len(reranked)} remaining)")

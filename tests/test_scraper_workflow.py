@@ -99,6 +99,23 @@ class TestIngestSummary:
         second = self._ingest_json(clients_dir, name, capsys, monkeypatch)
         assert second["new"] == 1 and second["unchanged"] == 1 and second["failed"] == 0, second
 
+    def test_deleted_file_is_reported_and_its_chunks_removed(self, client_with_pages, clients_dir, capsys, monkeypatch):
+        """Existing behaviour, checked here so the README can rely on it."""
+        from core.client import load_client
+        from core.search import HybridSearcher
+
+        name, docs = client_with_pages
+        self._ingest_json(clients_dir, name, capsys, monkeypatch)
+        (docs / "bad.md").unlink()
+        summary = self._ingest_json(clients_dir, name, capsys, monkeypatch)
+        assert summary["deleted"] == 1 and summary["chunks_removed"] > 0, summary
+
+        client = load_client(name, clients_dir=clients_dir)
+        searcher = HybridSearcher(index_path=str(client.index_path), collection_name=client.machine_name)
+        sources = {m.get("source_file") for m in searcher.collection.get(include=["metadatas"])["metadatas"]}
+        searcher.close()
+        assert sources == {"good.md"}
+
     def test_summary_shape(self, client_with_pages, clients_dir, capsys, monkeypatch):
         name, _ = client_with_pages
         summary = self._ingest_json(clients_dir, name, capsys, monkeypatch)

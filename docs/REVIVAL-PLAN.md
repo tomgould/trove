@@ -46,11 +46,11 @@ The wheel installs three top-level packages with generic names: `core`, `scripts
 
 ### 2. Use it as a building block
 
-- `TROVE_CLIENTS_DIR` (and `--clients-dir`) so clients can live outside the repo.
-- Read YAML frontmatter on Markdown files into chunk metadata, and show title and URL in CLI, `--json` and MCP results so answers can cite their source.
-- Create a client non-interactively: `create_client.py --name X --documents-dir PATH`.
-- Search several clients from the CLI.
-- Skip unchanged files on ingest using a manifest, so a scraper can run on a schedule.
+- [x] `TROVE_CLIENTS_DIR` (and `--clients-dir`) so clients can live outside the repo.
+- [x] Read YAML frontmatter on Markdown files into chunk metadata, and show title and URL in CLI, `--json` and MCP results so answers can cite their source. Markdown is also split at headings, with the heading path stored as `section`, and image syntax is stripped.
+- [x] Create a client non-interactively: `create_client.py --name X --documents-dir PATH`.
+- [x] Search several clients from the CLI.
+- [x] Skip unchanged files on ingest using a manifest, so a scraper can run on a schedule. The manifest compares content hashes, and `ingest.py --json` reports what changed.
 
 Done when: a workspace outside this repo can create, ingest, search and cite with no symlinks or hand-edited files.
 

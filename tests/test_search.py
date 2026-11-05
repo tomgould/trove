@@ -1241,3 +1241,27 @@ class TestSourceFilter:
 
         results = searcher.fast_search("anything", top_k=5, source_filter=["a.md", "c.md"])
         assert sorted(r["metadata"]["source_file"] for r in results) == ["a.md", "c.md"]
+
+    def test_search_applies_source_filter(self, tmp_path):
+        """The main search() path filters by source_file too, not only fast_search."""
+        from core.search import HybridSearcher
+
+        searcher = HybridSearcher(index_path=str(tmp_path), collection_name="source-filter", ephemeral=True)
+        chunks = [
+            {"id": "1", "content": "Sourdough starter needs daily feeding with flour and water.",
+             "metadata": {"source_file": "bread.md"}},
+            {"id": "2", "content": "Sourdough loaves rise slowly because of wild yeast.",
+             "metadata": {"source_file": "loaves.md"}},
+            {"id": "3", "content": "Solar panels turn sunlight into electricity.",
+             "metadata": {"source_file": "solar.md"}},
+        ]
+        embeddings = searcher.embedder.encode([c["content"] for c in chunks]).tolist()
+        searcher.index_chunks(chunks, embeddings)
+
+        unfiltered = searcher.search("sourdough starter", top_k=3, min_score=-100)
+        assert "bread.md" in {r["metadata"]["source_file"] for r in unfiltered}
+
+        results = searcher.search("sourdough starter", top_k=3, min_score=-100, source_filter=["loaves.md", "solar.md"])
+        sources = {r["metadata"]["source_file"] for r in results}
+        assert sources, "the filter removed every result"
+        assert sources <= {"loaves.md", "solar.md"}

@@ -250,5 +250,4 @@ These apply across all stages and should be addressed incrementally:
 ### Rename: renamed from the earlier working name to Trove ✅
 
 - Renamed all code, MCP tools (`trove_` prefix), env vars, state DB paths
-- Created public `trove` repo with `sync-to-public.sh` export script
-- Private repo retained for client data and development
+- Prepared the public `trove` repository for release

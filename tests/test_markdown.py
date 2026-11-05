@@ -217,3 +217,37 @@ class TestMarkdownIngest:
         assert chunks
         assert all("section" not in c["metadata"] for c in chunks)
         assert all(c["metadata"]["element_type"] != "MarkdownSection" for c in chunks)
+
+
+class TestCitationInResults:
+    CHUNK = {
+        "id": "x",
+        "content": "Discard half of the starter.",
+        "metadata": {"source_file": "starter.md", "title": "Feeding a starter",
+                     "url": "https://example.com/guides/starter", "section": "Feeding a starter > Daily routine"},
+        "_rerank_score": 1.5,
+    }
+
+    def test_citation_helper(self):
+        from core.search.searcher import citation
+
+        assert citation(self.CHUNK) == {
+            "title": "Feeding a starter",
+            "url": "https://example.com/guides/starter",
+            "section": "Feeding a starter > Daily routine",
+        }
+        assert citation({"metadata": {}}) == {"title": None, "url": None, "section": None}
+
+    def test_mcp_formatting_shows_title_url_section(self):
+        from mcp_server.shared import format_search_results
+
+        text = format_search_results([self.CHUNK])
+        assert "**Source:** starter.md" in text
+        assert "**Title:** Feeding a starter" in text
+        assert "**URL:** https://example.com/guides/starter" in text
+        assert "**Section:** Feeding a starter > Daily routine" in text
+
+    def test_context_prefix_includes_section(self):
+        from core.ingest import build_context_prefix
+
+        assert "Section: Feeding a starter > Daily routine." in build_context_prefix(self.CHUNK["metadata"])

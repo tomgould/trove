@@ -10,6 +10,8 @@ from typing import Optional
 from core.client import load_client, discover_clients, Client
 from core.ingest_job import IngestionJobManager
 from core.search import HybridSearcher, SearchResult, SearchQuality
+from core.search.merge import merge_client_results
+from core.search.searcher import citation
 from core.memory import MemoryStore
 from core.workflow import WorkflowEngine
 from core.agents import AgentLoader
@@ -357,19 +359,8 @@ def _cross_client_rrf_merge(
     k: int = 60,
     top_k: int = 20,
 ) -> list[dict]:
-    """Merge results from multiple clients using RRF."""
-    rrf_scores: dict[str, float] = {}
-    chunks_by_id: dict[str, dict] = {}
-
-    for client_name, results in client_results.items():
-        for rank, chunk in enumerate(results):
-            chunk_id = f"{client_name}:{chunk.get('id', rank)}"
-            chunk["_source_client"] = client_name
-            rrf_scores[chunk_id] = rrf_scores.get(chunk_id, 0) + 1.0 / (k + rank + 1)
-            chunks_by_id[chunk_id] = chunk
-
-    sorted_ids = sorted(rrf_scores, key=lambda cid: rrf_scores[cid], reverse=True)
-    return [chunks_by_id[cid] for cid in sorted_ids[:top_k]]
+    """Merge results from multiple clients using RRF (see core.search.merge)."""
+    return merge_client_results(client_results, k=k, top_k=top_k)
 
 
 # ---------------------------------------------------------------------------
@@ -456,6 +447,13 @@ def format_search_results(
         if source_client:
             result_lines.append(f"**Client:** {source_client}")
         result_lines.append(f"**Source:** {source}")
+        cite = citation(chunk)
+        if cite["title"]:
+            result_lines.append(f"**Title:** {cite['title']}")
+        if cite["url"]:
+            result_lines.append(f"**URL:** {cite['url']}")
+        if cite["section"]:
+            result_lines.append(f"**Section:** {cite['section']}")
         result_lines.append(f"**Score:** {score:.3f}")
         result_lines.append(f"**Type:** {chunk_type}")
 
@@ -568,7 +566,10 @@ def _perform_search(
         for num, entry in cmap.entries.items():
             page = entry.get("page")
             page_str = f", p.{page}" if page else ""
-            output += f"[{num}] {entry['source']}{page_str}\n"
+            label = entry.get("title") or entry["source"]
+            url_str = f" <{entry['url']}>" if entry.get("url") else ""
+            section_str = f" ({entry['section']})" if entry.get("section") else ""
+            output += f"[{num}] {label}{section_str}{page_str}{url_str}\n"
 
     return output
 

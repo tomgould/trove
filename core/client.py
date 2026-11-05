@@ -418,13 +418,28 @@ class Client:
 
     @property
     def has_index(self) -> bool:
-        """True once an index has been built in this client's index folder.
+        """True once at least one chunk has been indexed for this client.
 
-        The folder itself is not enough, because load_client creates it. This
-        checks for the database file ChromaDB writes when an index is opened
-        for ingestion, so it is false until ingestion has started at least once.
+        The index folder is not enough, because load_client creates it, and
+        ChromaDB's database file is not enough either, because it is written as
+        soon as an index is opened, even if ingestion then fails. This reads the
+        database file read-only and checks that it holds an embedding. If the
+        file cannot be read that way, an existing file counts as an index.
         """
-        return (self.index_path / INDEX_MARKER_FILE).is_file()
+        db_file = self.index_path / INDEX_MARKER_FILE
+        if not db_file.is_file():
+            return False
+        import sqlite3
+
+        try:
+            con = sqlite3.connect(f"{db_file.as_uri()}?mode=ro", uri=True, timeout=1)
+            try:
+                return bool(con.execute("SELECT EXISTS(SELECT 1 FROM embeddings)").fetchone()[0])
+            finally:
+                con.close()
+        except sqlite3.Error:
+            logger.debug("Could not read %s, treating it as an index", db_file)
+            return True
 
     def get_system_prompt(self) -> Optional[str]:
         """Load custom system prompt if available."""

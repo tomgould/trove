@@ -700,7 +700,32 @@ class TestHasIndex:
         assert client.index_path.exists()  # created by load_client
         assert client.has_index is False
 
-    def test_index_marker_means_indexed(self, clients_dir, make_client):
+    @staticmethod
+    def _open_collection(client):
+        import chromadb
+        from chromadb.config import Settings
+
+        db = chromadb.PersistentClient(path=str(client.index_path), settings=Settings(anonymized_telemetry=False))
+        return db.get_or_create_collection(client.machine_name)
+
+    def test_empty_database_is_not_an_index(self, clients_dir, make_client):
+        """Regression: a first ingest that failed left chroma.sqlite3 behind and the client showed [ready]."""
+        from core.client import INDEX_MARKER_FILE, load_client
+
+        client = load_client(make_client("alpha"), clients_dir=clients_dir)
+        self._open_collection(client)
+        assert (client.index_path / INDEX_MARKER_FILE).is_file()
+        assert client.has_index is False
+
+    def test_indexed_chunk_means_indexed(self, clients_dir, make_client):
+        from core.client import load_client
+
+        client = load_client(make_client("alpha"), clients_dir=clients_dir)
+        self._open_collection(client).add(ids=["c1"], embeddings=[[0.1, 0.2, 0.3]], documents=["hello"])
+        assert client.has_index is True
+
+    def test_unreadable_database_counts_as_index(self, clients_dir, make_client):
+        """If the file cannot be read as expected, an existing file still counts."""
         from core.client import INDEX_MARKER_FILE, load_client
 
         client = load_client(make_client("alpha"), clients_dir=clients_dir)

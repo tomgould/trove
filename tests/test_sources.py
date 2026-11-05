@@ -1362,14 +1362,15 @@ class TestSourceIngestIntegration:
         (client_dir / "prompts").mkdir()
         config = {"machine_name": "test_sync", "name": "Test Sync"}
         (client_dir / "client.yaml").write_text(yaml.dump(config))
+        from core.client import load_client
         try:
-            import os
-            old_cwd = os.getcwd()
-            os.chdir(tmp)
-            result = sync_client_sources("test_sync")
+            # Point the script at the temporary clients folder. It used to find
+            # the client only because load_client created missing folders.
+            with patch("scripts.ingest.load_client",
+                       lambda name: load_client(name, clients_dir=Path(tmp) / "clients")):
+                result = sync_client_sources("test_sync")
             assert result["synced"] is False
         finally:
-            os.chdir(old_cwd)
             shutil.rmtree(tmp)
 
 

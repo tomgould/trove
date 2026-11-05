@@ -21,7 +21,7 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.client import load_client, discover_clients
+from core.client import ClientNotFoundError, load_client, discover_clients
 from core.search import HybridSearcher
 
 logging.basicConfig(
@@ -43,7 +43,7 @@ def list_clients():
         try:
             client = load_client(name)
             desc = client.config.get("description", "")
-            has_index = client.index_path.exists()
+            has_index = client.has_index
             status = "ready" if has_index else "no index"
             print(f"  {name}: {desc} [{status}]")
         except Exception as e:
@@ -52,10 +52,14 @@ def list_clients():
 
 def run_search(args):
     """Run a search with the given arguments."""
-    client = load_client(args.client)
+    try:
+        client = load_client(args.client)
+    except ClientNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
     query = " ".join(args.query)
 
-    if not client.index_path.exists():
+    if not client.has_index:
         print(f"Error: Client '{args.client}' has no index. Run ingestion first.", file=sys.stderr)
         sys.exit(1)
 

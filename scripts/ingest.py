@@ -555,7 +555,7 @@ def list_clients() -> None:
         print("No clients found. Create a client directory in clients/")
 
 
-def main():
+def _main():
     parser = argparse.ArgumentParser(
         description="Trove Document and Code Ingestion CLI"
     )
@@ -777,6 +777,16 @@ def show_stats(client_name: str) -> None:
                     print(f"    {lang}: {count}")
     except Exception as e:
         logger.debug(f"Could not get detailed stats: {e}")
+
+
+def main():
+    from core.client import ClientNotFoundError
+
+    try:
+        _main()
+    except ClientNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -21,7 +21,7 @@ def handle_list_clients(arguments: dict) -> list[TextContent]:
         try:
             client = load_client(client_name, clients_dir=CLIENTS_DIR)
             desc = client.config.get("description", "No description")
-            has_index = client.index_path.exists()
+            has_index = client.has_index
             status = "ready" if has_index else "no index"
             lines.append(f"- **{client_name}**: {desc} [{status}]")
         except Exception as e:
@@ -47,7 +47,7 @@ def handle_get_client(arguments: dict) -> list[TextContent]:
         f"**Machine Name:** {client.machine_name}",
         f"**Description:** {client.config.get('description', 'N/A')}",
         f"**Index Path:** {client.index_path}",
-        f"**Has Index:** {client.index_path.exists()}",
+        f"**Has Index:** {client.has_index}",
         "",
         "**Search Config:**",
         f"  - BM25 Weight: {client.search_config.get('bm25_weight', 0.5)}",

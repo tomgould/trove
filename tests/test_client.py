@@ -639,3 +639,70 @@ class TestLoadClient:
         monkeypatch.delenv("RAG_CLIENT", raising=False)
         client = get_active_client(clients_dir=tmp_path)
         assert client is None
+
+
+class TestUnknownClient:
+    """Regression: a mistyped client name used to create folders and fall back to defaults."""
+
+    def test_unknown_client_raises_clear_error(self, clients_dir, make_client):
+        from core.client import ClientNotFoundError, load_client
+
+        make_client("alpha")
+        with pytest.raises(ClientNotFoundError) as excinfo:
+            load_client("alhpa", clients_dir=clients_dir)
+        message = str(excinfo.value)
+        assert "alhpa" in message
+        assert "alpha" in message  # lists the clients that do exist
+
+    def test_unknown_client_creates_nothing(self, clients_dir):
+        from core.client import ClientNotFoundError, load_client
+
+        with pytest.raises(ClientNotFoundError):
+            load_client("missing", clients_dir=clients_dir)
+        assert list(clients_dir.iterdir()) == []
+
+    def test_unknown_client_is_a_file_not_found_error(self, clients_dir):
+        """Callers that already catch FileNotFoundError keep working."""
+        from core.client import load_client
+
+        with pytest.raises(FileNotFoundError):
+            load_client("missing", clients_dir=clients_dir)
+
+    def test_empty_name_is_rejected(self, clients_dir):
+        from core.client import ClientNotFoundError, load_client
+
+        with pytest.raises(ClientNotFoundError):
+            load_client("", clients_dir=clients_dir)
+
+    def test_get_active_client_with_unknown_env_client(self, clients_dir, monkeypatch):
+        from core.client import ClientNotFoundError, get_active_client
+
+        monkeypatch.setenv("RAG_CLIENT", "nope")
+        with pytest.raises(ClientNotFoundError):
+            get_active_client(clients_dir=clients_dir)
+        assert not (clients_dir / "nope").exists()
+
+    def test_known_client_still_gets_its_folders(self, clients_dir, make_client):
+        from core.client import load_client
+
+        client = load_client(make_client("alpha"), clients_dir=clients_dir)
+        assert client.documents_path.is_dir()
+        assert client.index_path.is_dir()
+
+
+class TestHasIndex:
+    """Regression: the "no index" checks used index_path.exists(), which load_client makes true."""
+
+    def test_new_client_has_no_index(self, clients_dir, make_client):
+        from core.client import load_client
+
+        client = load_client(make_client("alpha"), clients_dir=clients_dir)
+        assert client.index_path.exists()  # created by load_client
+        assert client.has_index is False
+
+    def test_index_marker_means_indexed(self, clients_dir, make_client):
+        from core.client import INDEX_MARKER_FILE, load_client
+
+        client = load_client(make_client("alpha"), clients_dir=clients_dir)
+        (client.index_path / INDEX_MARKER_FILE).write_bytes(b"")
+        assert client.has_index is True

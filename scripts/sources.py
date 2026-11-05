@@ -187,7 +187,7 @@ def cmd_list(args):
                     print(f"    - {domain_dir.name} ({md_count} pages)")
 
 
-def main():
+def _main():
     parser = argparse.ArgumentParser(
         description="Trove Source Connector CLI"
     )
@@ -244,6 +244,16 @@ def main():
         cmd_sync(args)
     elif args.command == "list":
         cmd_list(args)
+
+
+def main():
+    from core.client import ClientNotFoundError
+
+    try:
+        _main()
+    except ClientNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

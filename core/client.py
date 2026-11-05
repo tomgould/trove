@@ -20,6 +20,24 @@ from core.reference_config import ReferenceConfig, load_reference_config
 
 logger = logging.getLogger(__name__)
 
+
+class ClientNotFoundError(FileNotFoundError):
+    """Raised when a client name does not match a folder in the clients directory."""
+
+    def __init__(self, client_name: str, clients_dir: Path, available: list[str]):
+        self.client_name = client_name
+        self.clients_dir = clients_dir
+        self.available = available
+        known = ", ".join(available) if available else "none"
+        super().__init__(
+            f"Client '{client_name}' not found in {clients_dir}. "
+            f"Available clients: {known}. "
+            "Create one with scripts/create_client.py."
+        )
+
+# Name of the database file ChromaDB writes in a client's index folder
+INDEX_MARKER_FILE = "chroma.sqlite3"
+
 # Default document extensions for ingestion
 DEFAULT_DOCUMENT_EXTENSIONS = (".pdf", ".docx", ".doc", ".xlsx", ".xls", ".csv", ".html", ".txt", ".md", ".mbox")
 
@@ -398,6 +416,16 @@ class Client:
         """Reference resolution configuration."""
         return load_reference_config(self.config.get("references", {}))
 
+    @property
+    def has_index(self) -> bool:
+        """True once an index has been built in this client's index folder.
+
+        The folder itself is not enough, because load_client creates it. This
+        checks for the database file ChromaDB writes when an index is opened
+        for ingestion, so it is false until ingestion has started at least once.
+        """
+        return (self.index_path / INDEX_MARKER_FILE).is_file()
+
     def get_system_prompt(self) -> Optional[str]:
         """Load custom system prompt if available."""
         prompt_file = self.prompts_path / "system.txt"
@@ -418,16 +446,23 @@ def load_client(client_name: str, clients_dir: Optional[Path] = None) -> Client:
 
     Args:
         client_name: Client directory name
-        clients_dir: Base directory for clients (default: ./clients)
+        clients_dir: Base directory for clients (default: see core.paths.default_clients_dir)
 
     Returns:
         Client instance
+
+    Raises:
+        ClientNotFoundError: If there is no folder for the client. Nothing is created.
     """
     if clients_dir is None:
-        # Default to clients/ in current directory
-        clients_dir = Path(__file__).parent.parent / "clients"
+        from core.paths import default_clients_dir
+        clients_dir = default_clients_dir()
+    clients_dir = Path(clients_dir)
 
     client_path = clients_dir / client_name
+    if not client_name or not client_path.is_dir():
+        raise ClientNotFoundError(client_name, clients_dir, discover_clients(clients_dir))
+
     config_file = client_path / "client.yaml"
 
     if not config_file.exists():
@@ -435,7 +470,7 @@ def load_client(client_name: str, clients_dir: Optional[Path] = None) -> Client:
         config = {**DEFAULT_CONFIG, "machine_name": client_name}
     else:
         with open(config_file) as f:
-            config = yaml.safe_load(f)
+            config = yaml.safe_load(f) or {}
         # Merge with defaults
         config = {**DEFAULT_CONFIG, **config}
 
@@ -462,7 +497,9 @@ def discover_clients(clients_dir: Optional[Path] = None) -> list[str]:
         List of client names
     """
     if clients_dir is None:
-        clients_dir = Path(__file__).parent.parent / "clients"
+        from core.paths import default_clients_dir
+        clients_dir = default_clients_dir()
+    clients_dir = Path(clients_dir)
 
     if not clients_dir.exists():
         return []

@@ -72,7 +72,7 @@ def list_clients_with_datasets():
         try:
             client = load_client(name)
             has_dataset = (client.path / "tests" / "eval_dataset.json").exists()
-            has_index = client.index_path.exists()
+            has_index = client.has_index
             status_parts = []
             if has_index:
                 status_parts.append("indexed")
@@ -276,7 +276,7 @@ Examples:
 
     # Load client and dataset
     client = load_client(args.client)
-    if not client.index_path.exists():
+    if not client.has_index:
         print(f"Error: Client '{args.client}' has no index. Run ingestion first.", file=sys.stderr)
         sys.exit(1)
 

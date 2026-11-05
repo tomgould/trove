@@ -97,7 +97,7 @@ def list_clients():
     for name in clients:
         try:
             c = load_client(name, CLIENTS_DIR)
-            index_exists = c.index_path.exists()
+            index_exists = c.has_index
             status = "indexed" if index_exists else "no index"
             print(f"  {name:<30} {c.name} ({status})")
         except Exception as e:
@@ -183,7 +183,7 @@ def main():
         print(f"Error loading client '{args.client}': {e}", file=sys.stderr)
         sys.exit(1)
 
-    if not client.index_path.exists():
+    if not client.has_index:
         print(f"Error: Client '{args.client}' has no index. Run ingestion first.", file=sys.stderr)
         sys.exit(1)
 

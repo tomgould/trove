@@ -164,7 +164,7 @@ def handle_search_multi(arguments: dict) -> list[TextContent]:
         for cn in all_clients:
             try:
                 c = load_client(cn, clients_dir=CLIENTS_DIR)
-                if c.index_path.exists():
+                if c.has_index:
                     client_names.append(cn)
             except Exception:
                 pass

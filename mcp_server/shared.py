@@ -206,7 +206,7 @@ def load_trove_client(client_name: str) -> tuple[Client, HybridSearcher]:
     # Load the client
     client = load_client(client_name, clients_dir=CLIENTS_DIR)
 
-    if not client.index_path.exists():
+    if not client.has_index:
         raise ValueError(f"Client '{client_name}' has no index. Run ingestion first.")
 
     # Initialize searcher

@@ -31,7 +31,15 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-if __name__ == "__main__":
+
+def main() -> None:
+    """Run the MCP server over stdio. This is the trove-server console script."""
     import asyncio
-    from mcp_server.server import main
-    asyncio.run(main())
+
+    from mcp_server.server import main as serve
+
+    asyncio.run(serve())
+
+
+if __name__ == "__main__":
+    main()

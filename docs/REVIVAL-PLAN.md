@@ -25,7 +25,7 @@ Done when: results and versions are written to `docs/BASELINE.md`.
 
 Done: 723 passed and 1 skipped on Python 3.12 and 3.10, recorded in `docs/BASELINE.md`.
 
-### 1. Make it healthy
+### 1. Make it healthy (done)
 
 - [x] Dependencies: floors replaced by tested ranges, constraints files per Python version, and extras (`docs`, `llm`, `mcp`, `code`, `dev`, `all`) so the core install does not need every heavy package. Python 3.11 to 3.13 are supported. Code indexing is not available on 3.13 because tree-sitter-languages has no wheels for it.
 - [x] Fix the known defects, each with a regression test:
@@ -36,7 +36,7 @@ Done: 723 passed and 1 skipped on Python 3.12 and 3.10, recorded in `docs/BASELI
   - [x] the README refers to `clients/prompts/api_client.py`, which is not in the repo
 - [x] Split the single large test file by area.
 - [x] Package so a wheel installs and the entry points run.
-- [ ] Pin GitHub Actions by commit, and run CI on Python 3.11 to 3.13 with a wheel smoke test.
+- [x] Pin GitHub Actions by commit, and run CI on Python 3.11 to 3.13 with a wheel smoke test.
 
 Done when: CI is green on three Python versions and a built wheel passes a smoke test.
 

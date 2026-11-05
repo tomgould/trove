@@ -109,7 +109,7 @@ python scripts/mcp_server.py
 
 ### Reproducible installs
 
-`requirements.txt` and `pyproject.toml` give tested version ranges. For the exact versions from a tested install, add the constraints file for your Python version:
+`requirements.txt` and `pyproject.toml` give tested version ranges. For the exact versions CI tests with, add the constraints file for your Python version:
 
 ```bash
 pip install -r requirements.txt -c constraints/py312.txt   # or py311.txt, py313.txt

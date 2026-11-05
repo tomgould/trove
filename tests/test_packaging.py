@@ -8,6 +8,7 @@ import tomllib
 from pathlib import Path
 
 import pytest
+import yaml
 from packaging.requirements import Requirement
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -70,6 +71,11 @@ class TestPythonVersions:
     def test_requires_python_matches_classifiers(self):
         lowest = _supported_versions()[0]
         assert PROJECT["requires-python"] == f">={lowest}"
+
+    def test_ci_matrix_matches_classifiers(self):
+        workflow = yaml.safe_load((REPO_ROOT / ".github" / "workflows" / "test.yml").read_text())
+        matrix = workflow["jobs"]["test"]["strategy"]["matrix"]["python-version"]
+        assert sorted(matrix) == _supported_versions()
 
     def test_ruff_target_matches_lowest_python(self):
         lowest = _supported_versions()[0].replace(".", "")

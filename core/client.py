@@ -91,6 +91,11 @@ INDEX_MARKER_FILE = "chroma.sqlite3"
 # Default document extensions for ingestion
 DEFAULT_DOCUMENT_EXTENSIONS = (".pdf", ".docx", ".doc", ".xlsx", ".xls", ".csv", ".html", ".txt", ".md", ".mbox")
 
+# Markdown options (client.yaml ``markdown:``). See core.markdown.
+DEFAULT_MARKDOWN_CONFIG = {
+    "strip_images": True,  # ![alt](url) becomes alt; image-only lines are dropped
+}
+
 # Default client configuration
 DEFAULT_CONFIG = {
     "name": "Default RAG",
@@ -175,7 +180,7 @@ DEFAULT_CONFIG = {
 _KNOWN_TOP_LEVEL_KEYS = {
     "name", "machine_name", "description", "paths", "documents",
     "embedding", "search", "llm", "code", "source_sync", "audit",
-    "references", "chunking", "graph", "sources",
+    "references", "chunking", "graph", "sources", "markdown",
 }
 
 # Known graph config keys
@@ -411,6 +416,11 @@ class Client:
     def llm_config(self) -> dict:
         """LLM configuration."""
         return {**DEFAULT_CONFIG["llm"], **self.config.get("llm", {})}
+
+    @property
+    def markdown_config(self) -> dict:
+        """Markdown ingestion options, with defaults filled in."""
+        return {**DEFAULT_MARKDOWN_CONFIG, **(self.config.get("markdown") or {})}
 
     @property
     def documents_config(self) -> dict:

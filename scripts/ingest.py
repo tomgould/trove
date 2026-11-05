@@ -220,11 +220,11 @@ def incremental_reindex(
     if not matches:
         logger.warning(f"Embedding model mismatch: {reason}")
         logger.warning("Falling back to full rebuild")
-        rebuild_index(client_name, include_code=include_code)
-        return
+        return rebuild_index(client_name, include_code=include_code)
 
     # Create ingestor with client's embedding model
     ingestor = DocumentIngestor(
+        markdown_config=client.markdown_config,
         embedding_model=embedding_model,
         passage_prefix=passage_prefix,
     )
@@ -322,6 +322,7 @@ def ingest_client_documents(
 
     # Create ingestor with client's embedding model
     ingestor = DocumentIngestor(
+        markdown_config=client.markdown_config,
         embedding_model=embedding_model,
         passage_prefix=passage_prefix,
     )
@@ -460,6 +461,7 @@ def ingest_client_code_files(client_name: str, rebuild: bool = False) -> None:
 
     # Create ingestor
     ingestor = DocumentIngestor(
+        markdown_config=client.markdown_config,
         embedding_model=embedding_model,
         passage_prefix=passage_prefix,
     )

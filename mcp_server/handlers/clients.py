@@ -69,10 +69,14 @@ def handle_load_client(arguments: dict) -> list[TextContent]:
         )]
 
     try:
-        client, searcher = load_trove_client(client_name)
+        client, searcher = load_trove_client(client_name, require_index=False)
+        status = (
+            "Ready to search." if client.has_index
+            else "Nothing is indexed yet. Ingest documents before searching."
+        )
         return [TextContent(
             type="text",
-            text=f"Loaded client: {client.name} ({client.machine_name})\n\nReady to search.",
+            text=f"Loaded client: {client.name} ({client.machine_name})\n\n{status}",
         )]
     except Exception as e:
         return [TextContent(type="text", text=f"Error loading client: {e}")]

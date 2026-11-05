@@ -54,7 +54,8 @@ def handle_ingest_file(arguments: dict) -> list[TextContent]:
         chunks, embeddings = ingestor.ingest_document(fp)
 
         # Index into searcher
-        _, searcher = load_trove_client(client_name)
+        # Ingestion creates the index, so a client with nothing indexed yet is fine
+        _, searcher = load_trove_client(client_name, require_index=False)
         searcher.index_chunks(chunks, embeddings)
 
         elapsed = _time.time() - start
@@ -128,7 +129,7 @@ def handle_ingest_url(arguments: dict) -> list[TextContent]:
             for chunk in chunks:
                 chunk["metadata"]["source_url"] = url
 
-            _, searcher = load_trove_client(client_name)
+            _, searcher = load_trove_client(client_name, require_index=False)
             searcher.index_chunks(chunks, embeddings)
             _cache.put(client_name, client, searcher)
 

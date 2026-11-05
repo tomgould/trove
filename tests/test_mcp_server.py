@@ -4,7 +4,7 @@ MCP server: entry point, "no index" checks and the optional prompt library.
 
 import asyncio
 import sys
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -38,11 +38,16 @@ class TestServerEntryPoint:
 @pytest.fixture
 def shared_clients_dir(clients_dir, monkeypatch):
     """Point the MCP server's clients folder at a temporary one."""
-    import mcp_server.handlers.search as search_handlers
+    import importlib
+
     import mcp_server.shared as shared
 
     monkeypatch.setattr(shared, "CLIENTS_DIR", clients_dir)
-    monkeypatch.setattr(search_handlers, "CLIENTS_DIR", clients_dir)
+    # Handler modules copy the name at import time, so patch each of them too
+    for name in ("clients", "graph", "ingest", "search", "sources"):
+        module = importlib.import_module(f"mcp_server.handlers.{name}")
+        if hasattr(module, "CLIENTS_DIR"):
+            monkeypatch.setattr(module, "CLIENTS_DIR", clients_dir)
     return clients_dir
 
 
@@ -102,6 +107,57 @@ class TestNoIndexChecks:
                 cli.run_search(args)
         assert excinfo.value.code == 1
         assert "not found" in capsys.readouterr().err
+
+
+class TestIngestIntoNewClient:
+    """Regression: the MCP ingest tools refused a new client because it had no index yet."""
+
+    @pytest.fixture
+    def fresh_client(self, shared_clients_dir, make_client):
+        import mcp_server.shared as shared
+        from core.client import load_client
+
+        name = make_client("fresh")
+        yield load_client(name, clients_dir=shared_clients_dir)
+        evicted = shared._cache._cache.pop(name, None)
+        if evicted is not None:
+            evicted[1].close()
+
+    def test_ingest_file_into_new_client(self, fresh_client):
+        from mcp_server.handlers.ingest import handle_ingest_file
+
+        doc = fresh_client.documents_path / "a.md"
+        doc.write_text("# Notes\n\nA short document about sourdough starters and how to feed them every day.\n")
+        text = handle_ingest_file({"client_name": "fresh", "file_path": str(doc)})[0].text
+        assert text.startswith("Ingested **a.md**"), text
+        assert fresh_client.has_index
+
+    def test_ingest_url_into_new_client(self, fresh_client):
+        from mcp_server.handlers.ingest import handle_ingest_url
+
+        page = b"<html><body><h1>Rivers</h1><p>A river carries water from the hills down to the sea and shapes the valley.</p></body></html>"
+        response = MagicMock(content=page, headers={"content-type": "text/html", "content-length": str(len(page))})
+        response.raise_for_status.return_value = None
+        with patch("requests.get", return_value=response):
+            text = handle_ingest_url({"client_name": "fresh", "url": "https://example.com/rivers"})[0].text
+        assert text.startswith("Ingested URL:"), text
+        assert fresh_client.has_index
+
+    def test_load_client_tool_accepts_new_client(self, fresh_client):
+        from mcp_server.handlers.clients import handle_load_client
+
+        text = handle_load_client({"client_name": "fresh"})[0].text
+        assert text.startswith("Loaded client:"), text
+        assert "Nothing is indexed yet" in text
+
+    def test_search_still_refuses_new_client(self, fresh_client):
+        """Loading for ingestion must not let search treat the empty client as ready."""
+        from mcp_server.handlers.clients import handle_load_client
+        from mcp_server.shared import load_trove_client
+
+        handle_load_client({"client_name": "fresh"})
+        with pytest.raises(ValueError, match="has no index"):
+            load_trove_client("fresh")
 
 
 @pytest.fixture

@@ -183,23 +183,28 @@ def _create_search_llm_provider(client: Client) -> Optional[LLMProvider]:
         return None
 
 
-def load_trove_client(client_name: str) -> tuple[Client, HybridSearcher]:
+def load_trove_client(client_name: str, require_index: bool = True) -> tuple[Client, HybridSearcher]:
     """Load a Trove client and initialize its searcher.
 
     Uses the searcher cache — if already loaded, returns cached instance.
 
     Args:
         client_name: Name of the client to load
+        require_index: Refuse a client with nothing indexed. Search paths keep
+            the default; ingestion passes False, because it is what creates the index.
 
     Returns:
         Tuple of (Client, HybridSearcher)
 
     Raises:
-        ValueError: If client not found or has no index
+        ClientNotFoundError: If the client does not exist
+        ValueError: If require_index is set and the client has nothing indexed
     """
     # Check cache first
     cached = _cache.get(client_name)
     if cached:
+        if require_index and not cached[0].has_index:
+            raise ValueError(f"Client '{client_name}' has no index. Run ingestion first.")
         _cache.current_name = client_name
         logger.info(f"Using cached searcher for: {client_name}")
         return cached
@@ -207,7 +212,7 @@ def load_trove_client(client_name: str) -> tuple[Client, HybridSearcher]:
     # Load the client
     client = load_client(client_name, clients_dir=CLIENTS_DIR)
 
-    if not client.has_index:
+    if require_index and not client.has_index:
         raise ValueError(f"Client '{client_name}' has no index. Run ingestion first.")
 
     # Initialize searcher

@@ -4,7 +4,9 @@ import logging
 
 from mcp.types import TextContent
 
+from core.search.searcher import chunk_source
 from mcp_server.shared import (
+    PromptLibraryUnavailable,
     _get_prompts_api_client,
     load_trove_client,
 )
@@ -26,6 +28,8 @@ def handle_prompts_search_live(arguments: dict) -> list[TextContent]:
             query, type=prompt_type, category=category,
             tag=tag, sort=sort, limit=limit,
         )
+    except PromptLibraryUnavailable as e:
+        return [TextContent(type="text", text=str(e))]
     except Exception as e:
         return [TextContent(type="text", text=f"prompts.chat API error: {e}")]
 
@@ -61,6 +65,14 @@ def handle_prompts_find(arguments: dict) -> list[TextContent]:
     top_k = min(arguments.get("top_k", 10), 50)
     half_k = max(top_k // 2, 3)
 
+    # The live API is optional: without it, only the local index is searched
+    try:
+        api = _get_prompts_api_client()
+        unavailable = None
+    except PromptLibraryUnavailable as e:
+        api = None
+        unavailable = str(e)
+
     # Local Trove search
     local_results = []
     try:
@@ -68,7 +80,7 @@ def handle_prompts_find(arguments: dict) -> list[TextContent]:
         search_result = searcher.search_with_quality(query=query, top_k=half_k)
         for chunk in search_result.results:
             content = chunk.get("content", chunk.get("text", ""))
-            source = chunk.get("metadata", {}).get("source", "")
+            source = chunk_source(chunk)
             title = chunk.get("metadata", {}).get("title", "")
             if not title:
                 # Extract title from first markdown heading
@@ -88,22 +100,22 @@ def handle_prompts_find(arguments: dict) -> list[TextContent]:
 
     # Live API search
     api_results = []
-    try:
-        api = _get_prompts_api_client()
-        resp = api.search_prompts(query, type=prompt_type, limit=half_k)
-        for p in resp.prompts:
-            api_results.append({
-                "source": "live",
-                "title": p.title,
-                "content": p.content,
-                "id": p.id,
-                "category": p.category,
-                "type": p.type,
-                "votes": p.vote_count,
-                "url": p.url,
-            })
-    except Exception as e:
-        logger.warning(f"prompts.chat API search failed (degrading gracefully): {e}")
+    if api is not None:
+        try:
+            resp = api.search_prompts(query, type=prompt_type, limit=half_k)
+            for p in resp.prompts:
+                api_results.append({
+                    "source": "live",
+                    "title": p.title,
+                    "content": p.content,
+                    "id": p.id,
+                    "category": p.category,
+                    "type": p.type,
+                    "votes": p.vote_count,
+                    "url": p.url,
+                })
+        except Exception as e:
+            logger.warning(f"prompts.chat API search failed (degrading gracefully): {e}")
 
     # Deduplicate by title similarity (normalize and compare)
     seen_titles: set[str] = set()
@@ -115,6 +127,8 @@ def handle_prompts_find(arguments: dict) -> list[TextContent]:
             combined.append(r)
 
     if not combined:
+        if unavailable:
+            return [TextContent(type="text", text=unavailable)]
         return [TextContent(type="text", text=f"No prompts found for: {query}")]
 
     lines = [
@@ -156,6 +170,8 @@ def handle_prompts_get(arguments: dict) -> list[TextContent]:
     try:
         api = _get_prompts_api_client()
         prompt = api.get_prompt(prompt_id)
+    except PromptLibraryUnavailable as e:
+        return [TextContent(type="text", text=str(e))]
     except Exception as e:
         return [TextContent(type="text", text=f"Error fetching prompt {prompt_id}: {e}")]
 

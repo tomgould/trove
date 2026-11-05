@@ -117,6 +117,8 @@ This sets a default client for that project, so `trove_search` works without spe
 
 ### Prompt Discovery Tools
 
+These tools need a prompts.chat API client at `clients/prompts/api_client.py`, which is not part of this repository. Without it they reply "The prompt library is not available".
+
 | Tool | Parameters | Description |
 |------|------------|-------------|
 | `trove_prompts_find` | `query`, `type?`, `top_k?` | Combined local index + live prompts.chat API search (deduplicated) |
@@ -170,7 +172,7 @@ Available example skills:
 | Quick Search | `trove-query.md` | Quick `client_name + query` search |
 | Overview | `trove-overview.md` | Summarized results for quick scanning |
 | Multi-Client | `trove-multi.md` | Cross-client search |
-| Prompt Finder | `prompt-finder.md` | Find AI prompt templates from 10k+ indexed + live API |
+| Prompt Finder | `prompt-finder.md` | Find AI prompt templates (needs the optional prompt library) |
 
 ### Custom Skill Template
 

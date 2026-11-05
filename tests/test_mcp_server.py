@@ -102,3 +102,49 @@ class TestNoIndexChecks:
                 cli.run_search(args)
         assert excinfo.value.code == 1
         assert "not found" in capsys.readouterr().err
+
+
+@pytest.fixture
+def no_prompt_library(monkeypatch):
+    """Make the optional prompts.chat client impossible to import."""
+    monkeypatch.setitem(sys.modules, "clients.prompts.api_client", None)
+
+
+class TestPromptLibraryUnavailable:
+    """Regression: the prompts tools failed with an ImportError for clients/prompts/api_client.py."""
+
+    def test_get_client_raises_clear_error(self, no_prompt_library):
+        from mcp_server.shared import PromptLibraryUnavailable, _get_prompts_api_client
+
+        with pytest.raises(PromptLibraryUnavailable, match="prompt library is not available"):
+            _get_prompts_api_client()
+
+    def test_search_live_degrades(self, no_prompt_library):
+        from mcp_server.handlers.prompts import handle_prompts_search_live
+
+        text = handle_prompts_search_live({"query": "code review"})[0].text
+        assert "prompt library is not available" in text
+
+    def test_get_degrades(self, no_prompt_library):
+        from mcp_server.handlers.prompts import handle_prompts_get
+
+        text = handle_prompts_get({"prompt_id": "abc"})[0].text
+        assert "prompt library is not available" in text
+
+    def test_find_degrades(self, no_prompt_library, shared_clients_dir):
+        from mcp_server.handlers.prompts import handle_prompts_find
+
+        text = handle_prompts_find({"query": "code review"})[0].text
+        assert "prompt library is not available" in text
+
+    def test_sync_prompts_script_exits_with_message(self, no_prompt_library, monkeypatch, capsys):
+        import importlib
+
+        import scripts.sync_prompts as sync
+
+        sync = importlib.reload(sync)
+        monkeypatch.setattr(sys, "argv", ["sync_prompts.py", "--dry-run"])
+        with pytest.raises(SystemExit) as excinfo:
+            sync.main()
+        assert excinfo.value.code == 1
+        assert "prompt library is not available" in capsys.readouterr().err

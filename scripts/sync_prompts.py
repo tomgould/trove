@@ -21,7 +21,15 @@ from pathlib import Path
 TROVE_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(TROVE_ROOT))
 
-from clients.prompts.api_client import PromptsAPIClient, PromptResult
+try:
+    from clients.prompts.api_client import PromptsAPIClient, PromptResult
+except ImportError:  # The prompts.chat client is optional and not in this repository
+    PromptsAPIClient = PromptResult = None
+
+PROMPT_LIBRARY_UNAVAILABLE = (
+    "The prompt library is not available: clients/prompts/api_client.py is not part "
+    "of this repository, so there is nothing to sync prompts with."
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -40,7 +48,7 @@ def slugify(text: str) -> str:
     return text[:80]
 
 
-def prompt_to_markdown(prompt: PromptResult) -> str:
+def prompt_to_markdown(prompt: "PromptResult") -> str:
     """Convert a PromptResult into a markdown document matching existing format."""
     lines = [f"# {prompt.title}", ""]
     if prompt.description:
@@ -133,6 +141,10 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Preview without writing files")
     parser.add_argument("--reindex", action="store_true", help="Run incremental reindex after sync")
     args = parser.parse_args()
+
+    if PromptsAPIClient is None:
+        print(PROMPT_LIBRARY_UNAVAILABLE, file=sys.stderr)
+        sys.exit(1)
 
     created = sync_prompts(pages=args.pages, dry_run=args.dry_run)
 

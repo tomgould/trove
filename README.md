@@ -53,7 +53,7 @@ A local-first knowledge engine with hybrid search, source connectors, plugin ext
 - **Workflow DAGs** — Multi-step task pipelines with dependency ordering and auto-status tracking
 - **Agent Templates** — YAML-defined personas (code-reviewer, security-reviewer, etc.)
 - **Local Agent Runner** — Search for context, inject system prompt, generate via LM Studio
-- **Prompt Discovery** — 10k+ indexed templates + live prompts.chat API search
+- **Prompt Discovery** (optional): search a local prompt index and the live prompts.chat API; needs a prompts.chat client that is not included, see [Prompt library](#prompt-library-optional)
 
 ## Stack
 
@@ -265,8 +265,6 @@ Trove/
 │   │   ├── index/            # Search indices
 │   │   ├── prompts/          # System prompts
 │   │   └── tests/            # Evaluation datasets
-│   └── prompts/
-│       └── api_client.py     # prompts.chat REST API client
 ├── scripts/
 │   ├── create_client.py      # Interactive client creation wizard
 │   ├── ingest.py             # CLI for document ingestion
@@ -658,22 +656,15 @@ python scripts/run_agent.py --agent security-reviewer --client myproject --top-k
 
 Available agents: `code-reviewer`, `security-reviewer`, `performance-analyzer`, `documentation-writer`, `test-generator`, `architecture-analyst`
 
-### Prompt Sync
+### Prompt Library (optional)
 
-Sync new and trending prompts from the live prompts.chat API into the local index.
+`scripts/sync_prompts.py` and the three `trove_prompts_*` MCP tools work with a prompts.chat API client at `clients/prompts/api_client.py`. That client is not part of this repository. Without it the script exits with "The prompt library is not available" and the MCP tools return the same message instead of failing. `trove_prompts_find` still searches a local `prompts` client if you have indexed one.
+
+If you add your own client module there, the script syncs prompts into `clients/prompts/documents/`:
 
 ```bash
-# Preview what would be synced
-python scripts/sync_prompts.py --dry-run
-
-# Sync newest + popular prompts (2 pages per sort order)
-python scripts/sync_prompts.py
-
-# Sync more pages for deeper coverage
-python scripts/sync_prompts.py --pages 100
-
-# Sync and trigger incremental reindex
-python scripts/sync_prompts.py --reindex
+python scripts/sync_prompts.py --dry-run   # preview
+python scripts/sync_prompts.py --reindex   # sync, then reindex the prompts client
 ```
 
 ### Overnight Rebuild
@@ -766,9 +757,9 @@ Add to your Claude Code settings (`~/.claude/settings.json`) or project `.mcp.js
 | `trove_agents_list` | List available agent templates |
 | `trove_agents_get` | Get full agent template details |
 | `trove_run_agent` | Run an agent end-to-end: search context, apply system prompt, generate via local LLM |
-| `trove_prompts_find` | Combined local index + live prompts.chat API search (deduplicated) |
-| `trove_prompts_search_live` | Search live prompts.chat API with type/category/tag/sort filters |
-| `trove_prompts_get` | Fetch full prompt by ID with optional variable substitution |
+| `trove_prompts_find` | Combined local index + live prompts.chat API search (deduplicated). Optional, see [Prompt Library](#prompt-library-optional) |
+| `trove_prompts_search_live` | Search live prompts.chat API with type/category/tag/sort filters. Optional |
+| `trove_prompts_get` | Fetch full prompt by ID with optional variable substitution. Optional |
 
 ### Example Usage in Claude Code
 
@@ -783,51 +774,13 @@ Use trove_search_client with client_name="stripe_api" and query="how to create a
 Use trove_search with query="authentication flow"
 ```
 
-### Prompt Discovery Examples
-
-The prompt discovery tools search 10k+ indexed prompt templates and the live prompts.chat API.
-
-**Find a prompt (combined local + live search):**
-```
-Find me a prompt template I can use as a senior code reviewer
-```
-```
-I need an AI prompt for generating midjourney-style portraits
-```
-
-**Browse live prompts with filters:**
-```
-Search prompts.chat for the newest IMAGE generation prompts
-```
-```
-What are the most popular prompts on prompts.chat right now?
-```
-
-**Fetch a full prompt with variable substitution:**
-```
-Fetch prompt cmj1zb0yc000ivl0rc9ka596e and set Position to "Data Engineer"
-```
-
-**Use the `/prompt-finder` skill shortcut:**
-```
-/prompt-finder react code review assistant
-/prompt-finder cartoon illustration of a Mini Cooper
-/prompt-finder SQL expert that explains query optimization
-```
-
-**Multi-step workflow:**
-```
-Is there a prompt template that acts as a job interviewer?
-Fetch the full version and customize it for a DevOps Engineer position.
-```
-
 ### Creating Skills That Use Trove
 
 You can create custom Claude Code skills in other projects that query Trove for documentation context. See **[docs/CLAUDE_CODE_INTEGRATION.md](docs/CLAUDE_CODE_INTEGRATION.md)** for:
 
 - Setting up global MCP configuration
 - Creating project-specific skills
-- Example skill templates (including `/prompt-finder` for AI prompt discovery)
+- Example skill templates
 - Multi-client workflows
 
 ## Development

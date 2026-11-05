@@ -572,7 +572,24 @@ def _validate_client_name(name: str | None) -> str | None:
     return None
 
 
+PROMPT_LIBRARY_UNAVAILABLE = (
+    "The prompt library is not available. The prompts.chat API client "
+    "(clients/prompts/api_client.py) is not part of this repository, so the "
+    "trove_prompts_* tools are switched off."
+)
+
+
+class PromptLibraryUnavailable(RuntimeError):
+    """Raised when the optional prompts.chat API client is not installed."""
+
+    def __init__(self, message: str = PROMPT_LIBRARY_UNAVAILABLE):
+        super().__init__(message)
+
+
 def _get_prompts_api_client():
-    """Lazy-import and return a PromptsAPIClient instance."""
-    from clients.prompts.api_client import PromptsAPIClient
+    """Return a PromptsAPIClient, or raise PromptLibraryUnavailable if it is missing."""
+    try:
+        from clients.prompts.api_client import PromptsAPIClient
+    except ImportError as e:
+        raise PromptLibraryUnavailable() from e
     return PromptsAPIClient()

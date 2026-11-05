@@ -432,9 +432,9 @@ class TestApplyCodeFilters:
 
     def _sample_chunks(self):
         return [
-            {"content": "def foo()", "metadata": {"chunk_type": "code", "language": "python", "symbol_type": "function", "repo_name": "trag"}},
+            {"content": "def foo()", "metadata": {"chunk_type": "code", "language": "python", "symbol_type": "function", "repo_name": "example-repo"}},
             {"content": "A guide to search", "metadata": {"chunk_type": "document"}},
-            {"content": "class Bar {}", "metadata": {"chunk_type": "code", "language": "typescript", "symbol_type": "class", "repo_name": "bsc"}},
+            {"content": "class Bar {}", "metadata": {"chunk_type": "code", "language": "typescript", "symbol_type": "class", "repo_name": "other-repo"}},
         ]
 
     def test_no_filters_returns_all(self):
@@ -467,14 +467,14 @@ class TestApplyCodeFilters:
     def test_filter_by_repo(self):
         s = self._make_searcher()
         chunks = self._sample_chunks()
-        result = s._apply_code_filters(chunks, repos=["trag"])
-        # trag repo chunk + document (no repo = included)
-        assert any(c["metadata"].get("repo_name") == "trag" for c in result)
+        result = s._apply_code_filters(chunks, repos=["example-repo"])
+        # example-repo chunk + document (no repo = included)
+        assert any(c["metadata"].get("repo_name") == "example-repo" for c in result)
 
     def test_combined_filters(self):
         s = self._make_searcher()
         chunks = self._sample_chunks()
-        result = s._apply_code_filters(chunks, chunk_types=["code"], languages=["typescript"], repos=["bsc"])
+        result = s._apply_code_filters(chunks, chunk_types=["code"], languages=["typescript"], repos=["other-repo"])
         assert len(result) == 1
         assert result[0]["metadata"]["language"] == "typescript"
 

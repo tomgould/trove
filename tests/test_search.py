@@ -507,46 +507,56 @@ class TestInputValidation:
 
 
 class TestSearchIntegration:
-    """Integration test using the real trag client."""
+    """Integration test: build a small index with the example client's settings and search it."""
 
-    def test_search_integration(self):
-        """Load real trag client, run a search, verify results."""
+    def test_search_integration(self, tmp_path):
+        """Copy the example client config, ingest a few documents, run a search, verify results."""
         from core.client import load_client
+        from core.ingest import DocumentIngestor, ingest_directory
         from core.search import HybridSearcher
 
-        try:
-            client = load_client("trag")
-        except Exception:
-            pytest.skip("trag client not available")
+        example_config = Path(__file__).resolve().parent.parent / "clients" / "example" / "client.yaml"
+        client_dir = tmp_path / "clients" / "example"
+        docs_dir = client_dir / "documents"
+        docs_dir.mkdir(parents=True)
+        shutil.copy(example_config, client_dir / "client.yaml")
+        (docs_dir / "hybrid.md").write_text(
+            "# Hybrid search\n\nHybrid search combines BM25 keyword matching with vector "
+            "similarity, then re-ranks the merged candidates with a cross-encoder.\n"
+        )
+        (docs_dir / "gardening.md").write_text(
+            "# Gardening\n\nTomatoes need full sun, regular watering and a stake to climb. "
+            "Pinch out the side shoots as the plant grows.\n"
+        )
 
+        client = load_client("example", clients_dir=tmp_path / "clients")
         search_config = client.search_config
         embedding_config = client.embedding_config
 
-        try:
-            searcher = HybridSearcher(
-                index_path=str(client.index_path),
-                collection_name=client.machine_name,
-                embedding_config=embedding_config,
-                tokenizer_config=client.tokenization_config,
-                bm25_weight=search_config.get("bm25_weight", 0.5),
-                vector_weight=search_config.get("vector_weight", 0.5),
-                min_score=search_config.get("min_score"),
-                merge_strategy=search_config.get("merge_strategy", "weighted"),
-                rrf_k=search_config.get("rrf_k", 60),
-                mmr_lambda=search_config.get("mmr_lambda"),
-            )
-        except Exception:
-            pytest.skip("trag client index not available")
+        searcher = HybridSearcher(
+            index_path=str(client.index_path),
+            collection_name=client.machine_name,
+            embedding_config=embedding_config,
+            tokenizer_config=client.tokenization_config,
+            bm25_weight=search_config.get("bm25_weight", 0.5),
+            vector_weight=search_config.get("vector_weight", 0.5),
+            min_score=search_config.get("min_score"),
+            merge_strategy=search_config.get("merge_strategy", "weighted"),
+            rrf_k=search_config.get("rrf_k", 60),
+            mmr_lambda=search_config.get("mmr_lambda"),
+            skip_bm25_load=True,
+        )
+        ingestor = DocumentIngestor(embedding_model=embedding_config.get("model", "all-MiniLM-L6-v2"))
+        ingest_directory(docs_dir, ingestor, extensions=(".md",), pipeline_searcher=searcher)
+        searcher._rebuild_bm25_index()
 
-        # Verify the searcher has data
-        stats = searcher.get_stats()
-        if stats.get("total_chunks", 0) == 0:
-            pytest.skip("trag client has no indexed data")
+        assert searcher.get_stats().get("total_chunks", 0) >= 2
 
         results = searcher.search("hybrid search", top_k=5)
 
         assert isinstance(results, list)
         assert len(results) > 0, "Expected at least one result for 'hybrid search'"
+        assert results[0]["metadata"]["source_file"] == "hybrid.md"
 
         # Verify result structure
         for chunk in results:

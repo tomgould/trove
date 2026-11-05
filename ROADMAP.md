@@ -247,7 +247,7 @@ These apply across all stages and should be addressed incrementally:
 - Existing clients work without config changes
 - New config keys have sensible defaults matching current behavior
 
-### Rename: TRAG → Trove ✅
+### Rename: renamed from the earlier working name to Trove ✅
 
 - Renamed all code, MCP tools (`trove_` prefix), env vars, state DB paths
 - Created public `trove` repo with `sync-to-public.sh` export script

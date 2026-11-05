@@ -30,6 +30,7 @@ Trove is active again. See [docs/REVIVAL-PLAN.md](docs/REVIVAL-PLAN.md) for the 
 
 ### Tests and CI
 - `tests/test_core.py` is split into one file per area, with shared fixtures in `tests/conftest.py`. All 724 original tests are still collected, and each fix above has a regression test.
+- The search integration test builds a small index from the example client's settings instead of needing an internal client, so it runs everywhere instead of always being skipped.
 - CI runs on Python 3.11, 3.12 and 3.13, pins every action to a commit, and builds the wheel, installs it in a clean environment with no extras and runs a smoke test that ingests and searches a folder of Markdown files and starts the MCP server.
 
 ### Migration
@@ -489,7 +490,7 @@ New `scripts/search.py` for testing search quality from the command line.
 
 Replaced single-client globals with an LRU cache (`SearcherCache`) holding multiple loaded searchers. Switching between clients is now instant if the client was recently used.
 
-- `SearcherCache` class with LRU eviction, configurable size via `TRAG_CACHE_SIZE` env var (default: 3)
+- `SearcherCache` class with LRU eviction, configurable size via a cache-size env var, now `TROVE_CACHE_SIZE` (default: 3)
 - Backward compatible: `get_current_client()` / `get_current_searcher()` still work unchanged
 - Cached searchers are properly closed on eviction and cleanup
 
@@ -547,7 +548,7 @@ Per-client test dataset format for evaluation.
 
 - Format: `clients/{name}/tests/eval_dataset.json`
 - Fields: `id`, `query`, `expected_chunks` (substring patterns), `ground_truth` (reference answer), `tags` (for filtering)
-- Seed dataset: 5 test cases for the `trag` client
+- Seed dataset: 5 test cases for an internal client
 - Supports retrieval-only tests (do we find the right chunks?) and end-to-end tests (does the answer match?)
 
 ### 3.2 Retrieval Metrics
@@ -626,7 +627,7 @@ Already adequate: cache includes tokenizer version hash, corruption detection ex
 ### 4.6 Test Coverage
 
 - 14 new tests: config validation (6), input validation (4), LLM retry (3), integration (1)
-- Integration test loads real `trag` client, runs a search, verifies result structure
+- Integration test loads an internal client, runs a search, verifies result structure
 - Total: 112 tests, all passing
 
 **Files changed:** `core/client.py`, `core/search.py`, `core/llm.py`, `core/conversation.py`, `core/conversation_docs.py`, `core/audit_trail.py`, `tests/test_core.py`, `ROADMAP.md`, `CLAUDE.md`

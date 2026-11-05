@@ -22,12 +22,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from core.agents import AgentLoader
 from core.client import load_client, discover_clients
 from core.llm import create_provider_from_config
+from core.paths import default_agents_dir, default_clients_dir
 from core.runner import AgentRunner
 from core.search import HybridSearcher
 
-TROVE_ROOT = Path(__file__).parent.parent
-AGENTS_DIR = TROVE_ROOT / "agents"
-CLIENTS_DIR = TROVE_ROOT / "clients"
+AGENTS_DIR = default_agents_dir()
+CLIENTS_DIR = default_clients_dir()
 
 logging.basicConfig(
     level=logging.INFO,

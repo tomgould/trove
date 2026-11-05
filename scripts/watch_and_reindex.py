@@ -287,10 +287,8 @@ def main():
 
     try:
         start_time = time.time()
-        trove_root = Path(__file__).parent.parent
-
         # Discover clients
-        client_names = discover_clients(trove_root / "clients")
+        client_names = discover_clients()
         if args.client:
             if args.client not in client_names:
                 logger.error(f"Client not found: {args.client}")

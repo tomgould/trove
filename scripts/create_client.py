@@ -22,8 +22,9 @@ from core.client import (
     discover_clients,
     validate_config,
 )
+from core.paths import default_clients_dir
 
-CLIENTS_DIR = Path(__file__).parent.parent / "clients"
+CLIENTS_DIR = default_clients_dir()
 
 
 def slugify(text: str) -> str:

@@ -13,6 +13,7 @@ from core.search import HybridSearcher, SearchResult, SearchQuality
 from core.memory import MemoryStore
 from core.workflow import WorkflowEngine
 from core.agents import AgentLoader
+from core.paths import default_agents_dir, default_clients_dir
 from core.llm import (
     LLMProvider,
     LMStudioProvider,
@@ -30,7 +31,7 @@ logger = logging.getLogger("trove-mcp")
 # ---------------------------------------------------------------------------
 
 TROVE_ROOT = Path(__file__).parent.parent
-CLIENTS_DIR = TROVE_ROOT / "clients"
+CLIENTS_DIR = default_clients_dir()
 
 # Client name validation — alphanumeric, hyphens, underscores only
 _VALID_CLIENT_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
@@ -118,7 +119,7 @@ _job_manager = IngestionJobManager(max_concurrent=1)
 
 # Agent orchestration state
 _state_stores: dict[str, tuple[MemoryStore, WorkflowEngine]] = {}
-_agent_loader = AgentLoader(TROVE_ROOT / "agents")
+_agent_loader = AgentLoader(default_agents_dir())
 
 
 # ---------------------------------------------------------------------------

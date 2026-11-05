@@ -21,6 +21,8 @@ from pathlib import Path
 TROVE_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(TROVE_ROOT))
 
+from core.paths import default_clients_dir
+
 try:
     from clients.prompts.api_client import PromptsAPIClient, PromptResult
 except ImportError:  # The prompts.chat client is optional and not in this repository
@@ -37,7 +39,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("sync-prompts")
 
-PROMPTS_DIR = TROVE_ROOT / "clients" / "prompts" / "documents" / "prompts_chat" / "prompts"
+PROMPTS_DIR = default_clients_dir() / "prompts" / "documents" / "prompts_chat" / "prompts"
 
 
 def slugify(text: str) -> str:
@@ -151,8 +153,7 @@ def main():
     if args.reindex and created and not args.dry_run:
         logger.info("Running incremental reindex for prompts client...")
         subprocess.run(
-            [sys.executable, str(TROVE_ROOT / "scripts" / "ingest.py"), "--client", "prompts"],
-            cwd=str(TROVE_ROOT),
+            [sys.executable, str(Path(__file__).parent / "ingest.py"), "--client", "prompts"],
         )
 
 

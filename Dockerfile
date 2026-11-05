@@ -13,13 +13,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY constraints/ constraints/
+RUN pip install --no-cache-dir -r requirements.txt -c constraints/py312.txt
 
 # Copy application
 COPY core/ core/
 COPY mcp_server/ mcp_server/
 COPY scripts/ scripts/
-COPY agents/ agents/
 COPY plugins/ plugins/
 COPY clients/example/ clients/example/
 

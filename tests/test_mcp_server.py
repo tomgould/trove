@@ -29,6 +29,20 @@ class TestServerEntryPoint:
             scripts.mcp_server.main()
         assert calls == ["served"]
 
+    def test_missing_mcp_package_gives_a_clear_message(self, monkeypatch, capsys):
+        """A core install without the mcp extra gets one line and exit 1, not a traceback."""
+        import scripts.mcp_server
+
+        for name in [m for m in sys.modules if m == "mcp" or m.startswith("mcp.")] + ["mcp"]:
+            monkeypatch.setitem(sys.modules, name, None)
+        monkeypatch.delitem(sys.modules, "mcp_server.server", raising=False)
+        with pytest.raises(SystemExit) as excinfo:
+            scripts.mcp_server.main()
+        assert excinfo.value.code == 1
+        err = capsys.readouterr().err
+        assert "trove-knowledge-engine[mcp]" in err
+        assert "Traceback" not in err
+
     def test_server_main_is_a_coroutine_function(self):
         from mcp_server.server import main
 

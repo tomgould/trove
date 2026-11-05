@@ -36,7 +36,17 @@ def main() -> None:
     """Run the MCP server over stdio. This is the trove-server console script."""
     import asyncio
 
-    from mcp_server.server import main as serve
+    try:
+        from mcp_server.server import main as serve
+    except ModuleNotFoundError as e:
+        if (e.name or "").split(".")[0] != "mcp":
+            raise
+        print(
+            "The MCP server needs the mcp package. Install it with: "
+            "pip install 'trove-knowledge-engine[mcp]'",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     asyncio.run(serve())
 

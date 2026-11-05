@@ -989,7 +989,18 @@ Always cite the source documents when providing information."""
         print(f"  3. Use via MCP: python scripts/mcp_server.py")
 
 
-def main():
+def main(argv: list[str] | None = None):
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog="trove-create-client",
+        description=(
+            "Create a new Trove client with an interactive wizard. "
+            f"Clients are created in {CLIENTS_DIR}."
+        ),
+    )
+    parser.parse_args(argv)
+
     try:
         create_client()
     except KeyboardInterrupt:

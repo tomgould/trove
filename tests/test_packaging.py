@@ -117,3 +117,17 @@ class TestBundledData:
         monkeypatch.chdir(tmp_path)
         assert paths.source_checkout_root() is None
         assert paths.default_clients_dir() == tmp_path / "clients"
+
+
+class TestCreateClientHelp:
+    """Regression: trove-create-client --help started the interactive wizard."""
+
+    @pytest.mark.parametrize("flag", ["--help", "-h"])
+    def test_help_prints_usage_and_exits(self, flag, capsys, monkeypatch):
+        import scripts.create_client as cli
+
+        monkeypatch.setattr(cli, "create_client", lambda: pytest.fail("the wizard started"))
+        with pytest.raises(SystemExit) as excinfo:
+            cli.main([flag])
+        assert excinfo.value.code == 0
+        assert "usage: trove-create-client" in capsys.readouterr().out

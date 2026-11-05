@@ -12,6 +12,21 @@ import pytest
 SMOKE = Path(__file__).parent / "smoke" / "scraper_workflow.py"
 
 
+def _load(path: Path):
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_end_to_end_scraper_workflow(tmp_path):
+    observed = _load(SMOKE).run(tmp_path)
+    assert observed["cli_top_result"]["url"] == "https://bakery.example/guides/starter"
+    assert observed["chunks_embedded_on_reingest"] == 0
+    assert observed["multi_clients"] == ["bakery", "notes"]
+    assert observed["mcp_has_citation"]
+
+
 class TestManifestHash:
     """Regression: a scraper rewriting identical files changed their mtime and forced a re-embed."""
 

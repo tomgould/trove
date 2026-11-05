@@ -367,6 +367,7 @@ def main():
             # Create ingestor per-client with the client's embedding config
             embedding_config = client.embedding_config
             ingestor = DocumentIngestor(
+                markdown_config=client.markdown_config,
                 embedding_model=embedding_config.get("model", "all-MiniLM-L6-v2"),
                 passage_prefix=embedding_config.get("passage_prefix", ""),
             )

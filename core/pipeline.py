@@ -166,8 +166,7 @@ class IngestionPipeline:
             if path.suffix.lower() == ".mbox":
                 chunks = self.ingestor.ingest_mbox_chunks_only(path)
             else:
-                elements = self.ingestor.parse_document(path)
-                chunks = self.ingestor.chunk_elements(elements, source_id=str(path))
+                chunks = self.ingestor.chunk_file(path)
 
             try:
                 rel_path = path.relative_to(base_directory)

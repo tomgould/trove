@@ -81,6 +81,10 @@ def build_context_prefix(metadata: dict) -> str:
     if page_number is not None:
         parts.append(f"Page {page_number}.")
 
+    section = metadata.get("section")
+    if section:
+        parts.append(f"Section: {section}.")
+
     if not parts:
         return ""
 
@@ -229,6 +233,7 @@ class DocumentIngestor:
         chunk_max_chars: int = 1500,
         chunk_overlap: int = 100,
         passage_prefix: str = "",
+        markdown_config: dict | None = None,
     ):
         """
         Initialize the document ingestor.
@@ -239,7 +244,11 @@ class DocumentIngestor:
             chunk_overlap: Character overlap between chunks
             passage_prefix: Prefix to add to passages before embedding
                             (e.g., "passage: " for E5 models)
+            markdown_config: Markdown options from client.yaml (``markdown:``),
+                            e.g. {"strip_images": False}. Defaults apply when None.
         """
+        from core.client import DEFAULT_MARKDOWN_CONFIG
+        self.markdown_config = {**DEFAULT_MARKDOWN_CONFIG, **(markdown_config or {})}
         self.chunk_max_chars = chunk_max_chars
         self.chunk_overlap = chunk_overlap
         self.passage_prefix = passage_prefix
@@ -333,13 +342,24 @@ class DocumentIngestor:
                 overlap=self.chunk_overlap,
             )
 
+        items = []
+        for chunk in chunks:
+            element_meta = chunk.metadata.to_dict() if hasattr(chunk, "metadata") and hasattr(chunk.metadata, "to_dict") else {}
+            items.append((str(chunk), {
+                "element_type": type(chunk).__name__,
+                "page_number": element_meta.get("page_number"),
+                "parent_id": element_meta.get("parent_id"),
+                "is_continuation": element_meta.get("is_continuation"),
+            }))
+        return self._build_chunks(items, source_id)
+
+    def _build_chunks(self, items: list[tuple[str, dict]], source_id: str = "") -> list[dict]:
+        """Validate, de-duplicate and give IDs to (content, metadata) pairs."""
         result = []
         seen_hashes: set[str] = set()
         skip_stats: dict[str, int] = {"too_short": 0, "no_alphanumeric": 0, "duplicate": 0}
 
-        for i, chunk in enumerate(chunks):
-            content = str(chunk)
-
+        for i, (content, extra_meta) in enumerate(items):
             # Validate chunk quality
             is_valid, skip_reason = validate_chunk(content)
             if not is_valid:
@@ -357,14 +377,13 @@ class DocumentIngestor:
             hash_input = f"{source_id}:{i}:{content[:100]}"
             chunk_id = hashlib.md5(hash_input.encode()).hexdigest()[:16]
 
-            # Extract Unstructured metadata
-            element_meta = chunk.metadata.to_dict() if hasattr(chunk, "metadata") and hasattr(chunk.metadata, "to_dict") else {}
             metadata = {
-                "element_type": type(chunk).__name__,
+                "element_type": extra_meta.get("element_type"),
                 "chunk_index": i,
-                "page_number": element_meta.get("page_number"),
-                "parent_id": element_meta.get("parent_id"),
-                "is_continuation": element_meta.get("is_continuation"),
+                "page_number": extra_meta.get("page_number"),
+                "parent_id": extra_meta.get("parent_id"),
+                "is_continuation": extra_meta.get("is_continuation"),
+                **{k: v for k, v in extra_meta.items() if k not in ("element_type", "page_number", "parent_id", "is_continuation")},
                 "content_hash": content_hash,
             }
 
@@ -379,6 +398,50 @@ class DocumentIngestor:
             logger.info(f"Skipped {total_skipped} chunks: {skip_stats}")
         logger.info(f"Created {len(result)} chunks")
         return result
+
+    def chunk_markdown_file(self, path: str | Path) -> list[dict]:
+        """Chunk a Markdown file by its headings, with frontmatter as metadata.
+
+        See core.markdown. Bad frontmatter is logged and the whole file is indexed.
+        """
+        from core.markdown import (
+            chunk_markdown, first_heading, frontmatter_metadata, split_frontmatter, strip_images,
+        )
+
+        path = Path(path)
+        text = path.read_text(encoding="utf-8", errors="replace")
+        frontmatter, body = split_frontmatter(text, source=str(path))
+        page_meta = frontmatter_metadata(frontmatter)
+        if self.markdown_config.get("strip_images", True):
+            body = strip_images(body)
+
+        title = page_meta.get("title") or first_heading(body)
+        if title and "title" not in page_meta:
+            page_meta["title"] = title
+
+        pieces = chunk_markdown(
+            body,
+            title=title if isinstance(title, str) else None,
+            max_chars=self.chunk_max_chars,
+            overlap=self.chunk_overlap,
+        )
+        items = [
+            (content, {"element_type": "MarkdownSection", "section": section, **page_meta})
+            for content, section in pieces
+        ]
+        chunks = self._build_chunks(items, source_id=str(path))
+        logger.info(f"Created {len(chunks)} chunks from {path.name}")
+        return chunks
+
+    def chunk_file(self, path: str | Path) -> list[dict]:
+        """Parse and chunk one document. Markdown goes through chunk_markdown_file."""
+        from core.markdown import MARKDOWN_EXTENSIONS
+
+        path = Path(path)
+        if path.suffix.lower() in MARKDOWN_EXTENSIONS:
+            return self.chunk_markdown_file(path)
+        elements = self.parse_document(path)
+        return self.chunk_elements(elements, source_id=str(path))
 
     def create_embeddings(
         self, chunks: list[dict], batch_size: Optional[int] = None,
@@ -492,8 +555,7 @@ class DocumentIngestor:
             Tuple of (chunks, embeddings)
         """
         path = Path(path)
-        elements = self.parse_document(path)
-        chunks = self.chunk_elements(elements, source_id=str(path))
+        chunks = self.chunk_file(path)
 
         # Add source file to metadata (can be overridden by ingest_directory for full path)
         for chunk in chunks:

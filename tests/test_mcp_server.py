@@ -164,6 +164,40 @@ class TestIngestIntoNewClient:
         assert text.startswith("Loaded client:"), text
         assert "Nothing is indexed yet" in text
 
+    def test_search_after_ingest_file_finds_the_new_document(self, fresh_client):
+        """Regression: the cached searcher was stale after an MCP ingest, so search found nothing."""
+        from mcp_server.handlers.ingest import handle_ingest_file
+        from mcp_server.handlers.search import handle_search_client
+
+        first = fresh_client.documents_path / "a.md"
+        first.write_text("# Bread\n\nA sourdough starter is fed every day with flour and water to keep it lively.\n")
+        handle_ingest_file({"client_name": "fresh", "file_path": str(first)})
+        before = handle_search_client({"client_name": "fresh", "query": "river valley erosion"})[0].text
+
+        second = fresh_client.documents_path / "b.md"
+        second.write_text("# Rivers\n\nA river erodes its valley and carries silt down to the estuary over time.\n")
+        handle_ingest_file({"client_name": "fresh", "file_path": str(second)})
+        after = handle_search_client({"client_name": "fresh", "query": "river valley erosion"})[0].text
+        assert "b.md" in after, after
+        assert "b.md" not in before
+
+    def test_search_after_ingest_url_finds_the_page(self, fresh_client):
+        from mcp_server.handlers.ingest import handle_ingest_file, handle_ingest_url
+        from mcp_server.handlers.search import handle_search_client
+
+        first = fresh_client.documents_path / "a.md"
+        first.write_text("# Bread\n\nA sourdough starter is fed every day with flour and water to keep it lively.\n")
+        handle_ingest_file({"client_name": "fresh", "file_path": str(first)})
+        handle_search_client({"client_name": "fresh", "query": "glacier moraine"})
+
+        page = b"<html><body><h1>Glaciers</h1><p>A glacier pushes rock into a moraine as it slowly retreats up the valley.</p></body></html>"
+        response = MagicMock(content=page, headers={"content-type": "text/html", "content-length": str(len(page))})
+        response.raise_for_status.return_value = None
+        with patch("requests.get", return_value=response):
+            handle_ingest_url({"client_name": "fresh", "url": "https://example.com/glaciers"})
+        after = handle_search_client({"client_name": "fresh", "query": "glacier moraine"})[0].text
+        assert "moraine" in after, after
+
     def test_search_still_refuses_new_client(self, fresh_client):
         """Loading for ingestion must not let search treat the empty client as ready."""
         from mcp_server.handlers.clients import handle_load_client
@@ -218,3 +252,25 @@ class TestPromptLibraryUnavailable:
             sync.main()
         assert excinfo.value.code == 1
         assert "prompt library is not available" in capsys.readouterr().err
+
+
+class TestSearcherCachePut:
+    def test_putting_the_cached_searcher_again_does_not_close_it(self):
+        from mcp_server.shared import SearcherCache
+
+        cache = SearcherCache(max_size=2)
+        searcher = MagicMock()
+        cache.put("a", "client", searcher)
+        cache.put("a", "client-reloaded", searcher)
+        searcher.close.assert_not_called()
+        assert cache.get("a") == ("client-reloaded", searcher)
+
+    def test_replacing_a_searcher_closes_the_old_one(self):
+        from mcp_server.shared import SearcherCache
+
+        cache = SearcherCache(max_size=2)
+        old, new = MagicMock(), MagicMock()
+        cache.put("a", "client", old)
+        cache.put("a", "client", new)
+        old.close.assert_called_once()
+        new.close.assert_not_called()

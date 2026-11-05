@@ -69,10 +69,13 @@ class SearcherCache:
         with self._lock:
             if name in self._cache:
                 old_client, old_searcher = self._cache[name]
-                try:
-                    old_searcher.close()
-                except Exception:
-                    pass
+                # Re-putting the searcher that is already cached (the ingest tools
+                # do this) must not close it, or later searches find nothing.
+                if old_searcher is not searcher:
+                    try:
+                        old_searcher.close()
+                    except Exception:
+                        pass
                 self._access_order.remove(name)
             elif len(self._cache) >= self.max_size:
                 evict_name = self._access_order.pop(0)

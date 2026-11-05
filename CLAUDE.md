@@ -92,7 +92,7 @@ trove/
 │       ├── prompts.py        # Prompt discovery (local + live API)
 │       └── sources.py        # GitHub/web source connectors
 ├── plugins/                   # User plugin directory (custom extensions)
-├── agents/                    # Global agent YAML templates
+├── core/data/agents/           # Agent YAML templates, shipped in the package
 │   ├── security-reviewer.yaml
 │   ├── code-reviewer.yaml
 │   ├── performance-analyzer.yaml
@@ -117,9 +117,10 @@ trove/
 │   ├── create_client.py      # Interactive client creation wizard
 │   ├── mcp_server.py         # MCP server launch script
 │   ├── run_agent.py          # CLI for running agents locally via LM Studio
-│   ├── sync_prompts.py       # Sync prompts from prompts.chat API
+│   ├── sync_prompts.py       # Sync prompts from prompts.chat (needs the optional client, not in this repo)
 │   └── sources.py            # CLI for source connectors (connect, crawl, sync, list)
-└── tests/test_core.py        # pytest tests
+├── constraints/               # Exact versions from a working install, per Python version
+└── tests/                     # One test file per area, shared fixtures in conftest.py, install checks in smoke/
 ```
 
 ---

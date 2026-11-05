@@ -4,7 +4,7 @@ Trove is active again. This repository is the single source of truth, and everyt
 
 The first driver is a research workspace that scrapes public websites with ScrapePy, then makes the pages searchable with Trove, with many separate projects each holding their own index. That use exposed what is missing from Trove as a building block, and the plan below fixes those things first.
 
-A more mature sibling project, Mullet, grew out of Trove and has solved several problems Trove still has. It is used as a read-only reference. Trove does not depend on it, and nothing in this repo points back at it.
+A more mature sibling project grew out of Trove and has solved several problems Trove still has. It is used as a read-only reference. Trove does not depend on it, and nothing in this repo points back at it.
 
 ## Principles
 
@@ -17,25 +17,31 @@ A more mature sibling project, Mullet, grew out of Trove and has solved several 
 
 ## Phases
 
-### 0. Baseline
+### 0. Baseline (done)
 
 Install on a clean environment with the CPU build of PyTorch, run the test suite and record what passes. Note the installed versions of chromadb, sentence-transformers, unstructured, tree-sitter, mcp and torch.
 
 Done when: results and versions are written to `docs/BASELINE.md`.
 
-### 1. Make it healthy
+Done: 723 passed and 1 skipped on Python 3.12 and 3.10, recorded in `docs/BASELINE.md`.
 
-- Dependencies: floors replaced by tested ranges, a lockfile, and extras so the core install does not need every heavy package. Support Python 3.11 to 3.13.
-- Fix the known defects:
-  - the `trove-server` entry point points at a `main()` that does not exist
-  - the `source_filter` option compares the wrong metadata key and never matches
-  - the "no index" checks can never fire
-  - `load_client` creates folders for a mistyped client name
-  - the README refers to `clients/prompts/api_client.py`, which is not in the repo
-- Split the single large test file by area.
-- Package so a wheel installs and the entry points run. Pin GitHub Actions by commit.
+### 1. Make it healthy (done)
+
+- [x] Dependencies: floors replaced by tested ranges, constraints files per Python version, and extras (`docs`, `llm`, `mcp`, `code`, `dev`, `all`) so the core install does not need every heavy package. Python 3.11 to 3.13 are supported. Code indexing is not available on 3.13 because tree-sitter-languages has no wheels for it.
+- [x] Fix the known defects, each with a regression test:
+  - [x] the `trove-server` entry point points at a `main()` that does not exist
+  - [x] the `source_filter` option compares the wrong metadata key and never matches
+  - [x] the "no index" checks can never fire
+  - [x] `load_client` creates folders for a mistyped client name
+  - [x] the README refers to `clients/prompts/api_client.py`, which is not in the repo
+- [x] Split the single large test file by area.
+- [x] Package so a wheel installs and the entry points run. Pin GitHub Actions by commit.
 
 Done when: CI is green on three Python versions and a built wheel passes a smoke test.
+
+#### Follow-up: rename the top-level packages
+
+The wheel installs three top-level packages with generic names: `core`, `scripts` and `mcp_server`. Any other project that ships a `core` or `scripts` package will overwrite them, or be overwritten, in the same environment, and `import core` says nothing about where it came from. They should move under a single `trove` package (`trove.core`, `trove.cli`, `trove.mcp_server`) before Trove is published to PyPI. It touches every import in the code and tests and the paths in the docs and MCP configuration examples, so it is a change of its own rather than part of Phase 1, and it needs a short deprecation period in which the old module paths still work.
 
 ### 2. Use it as a building block
 
@@ -87,6 +93,6 @@ The REST API, the desktop UI and the plugin system in `ROADMAP.md` stay where th
 
 ## Risks
 
-- Dependency drift. The pins are floors with no lockfile, so a fresh install may not behave like the last tested one. Phase 0 shows how much.
+- Dependency drift. Phase 0 showed it: with floors only, Python 3.10 resolved much older unstructured and numpy releases than 3.12. Phase 1 replaced the floors with tested ranges and per-version constraints files; keep them current when dependencies change.
 - Ports done by hand can drift from their source. Each port records what behaviour it matches in its test names.
 - Old indexes built with older Chroma versions may not open. Rebuilding is the supported path.

@@ -1,58 +1,58 @@
-# Trove — Knowledge Engine for AI Development
+# Trove: Knowledge Engine for AI Development
 
 A local-first knowledge engine with hybrid search, source connectors, plugin extensibility, and MCP integration for Claude Code. Trove discovers, indexes, and searches your documents, code, and web content so AI tools always have the right context.
 
 ## Features
 
 ### Search & Retrieval
-- **Hybrid Search** — BM25 keyword + vector semantic search with cross-encoder re-ranking
-- **RRF Merge Strategy** — Reciprocal Rank Fusion as alternative to weighted merging
-- **MMR Diversity** — Maximal Marginal Relevance reduces redundant results
-- **HyDE** — Hypothetical Document Embeddings for better vector search on vague queries
-- **Multi-Query / RAG-Fusion** — Generate query variants and merge results via RRF
-- **Search Quality Indicators** — Scores, timing, source diversity, and strategy metadata
-- **Configurable Embeddings** — Choose embedding model per client (MiniLM, BGE, E5)
-- **Stemming & Synonyms** — Porter/Snowball stemmer and domain-specific synonyms
-- **Agentic/Recursive Search** — Automatically refines queries when results are insufficient
-- **Reference Resolution** — Detects "see Appendix X" and fetches referenced content
-- **Query Contextualization** — Understands follow-up questions in conversation context
-- **Search Result Caching** — LRU + TTL cache with filter-aware keys
-- **Score Normalization** — MinMax, Z-score, or raw normalization for merge strategies
+- **Hybrid Search**: BM25 keyword + vector semantic search with cross-encoder re-ranking
+- **RRF Merge Strategy**: Reciprocal Rank Fusion as alternative to weighted merging
+- **MMR Diversity**: Maximal Marginal Relevance reduces redundant results
+- **HyDE**: Hypothetical Document Embeddings for better vector search on vague queries
+- **Multi-Query / RAG-Fusion**: Generate query variants and merge results via RRF
+- **Search Quality Indicators**: Scores, timing, source diversity, and strategy metadata
+- **Configurable Embeddings**: Choose embedding model per client (MiniLM, BGE, E5)
+- **Stemming & Synonyms**: Porter/Snowball stemmer and domain-specific synonyms
+- **Agentic/Recursive Search**: Automatically refines queries when results are insufficient
+- **Reference Resolution**: Detects "see Appendix X" and fetches referenced content
+- **Query Contextualization**: Understands follow-up questions in conversation context
+- **Search Result Caching**: LRU + TTL cache with filter-aware keys
+- **Score Normalization**: MinMax, Z-score, or raw normalization for merge strategies
 
 ### Source Connectors
-- **GitHub Connector** — Discover repos from GitHub accounts/orgs, clone/fetch, track changed files. API client with rate limiting, pagination, and retries. Tokens via environment variables only.
-- **Web Crawler** — BFS crawl with scope control, HTML-to-Markdown conversion (markdownify + trafilatura), incremental cache via ETag/content hash.
-- **Auto-sync** — Sources sync before ingestion when `sync_on_ingest` is configured. Manual sync via CLI or MCP.
-- **Incremental Updates** — Only changed files are re-crawled and reindexed.
+- **GitHub Connector**: Discover repos from GitHub accounts/orgs, clone/fetch, track changed files. API client with rate limiting, pagination, and retries. Tokens via environment variables only.
+- **Web Crawler**: BFS crawl with scope control, HTML-to-Markdown conversion (markdownify + trafilatura), incremental cache via ETag/content hash.
+- **Auto-sync**: Sources sync before ingestion when `sync_on_ingest` is configured. Manual sync via CLI or MCP.
+- **Incremental Updates**: Only changed files are re-crawled and reindexed.
 
 ### Plugin System
-- **6 Extension Points** — Custom embedding models, chunkers, parsers, rerankers, LLM providers, and merge strategies
-- **Plugin Registry** — Register and lookup plugins by name with duplicate detection
-- **Auto-Discovery** — Drop a `.py` file or package in `plugins/` and it's loaded on startup
-- **Built-in Refactoring** — LLM providers and rerankers already implement plugin interfaces
+- **6 Extension Points**: Custom embedding models, chunkers, parsers, rerankers, LLM providers, and merge strategies
+- **Plugin Registry**: Register and lookup plugins by name with duplicate detection
+- **Auto-Discovery**: Drop a `.py` file or package in `plugins/` and it's loaded on startup
+- **Built-in Refactoring**: LLM providers and rerankers already implement plugin interfaces
 
 ### Ingestion & Indexing
-- **Producer-Consumer Pipeline** — Parallel file parsing (ThreadPool) → GPU batch embedding → progressive ChromaDB indexing
-- **Fast File Collection** — `git ls-files` for git repos (near-instant), `os.scandir` fallback, parallel change detection
-- **Ctrl+C Safe** — Each GPU batch is indexed immediately; interrupt loses at most one batch, resume skips already-indexed files
-- **Code Indexing** — Tree-sitter AST parsing for Python, TypeScript, JavaScript, PHP, HTML, CSS, YAML, JSON, Gherkin, Dart
-- **Semantic Chunking** — Split by embedding similarity drops (alternative to title-based)
-- **Recursive Chunking** — Priority-ordered separators with fallback
-- **Contextual Embeddings** — Prepend document context to chunks before embedding
-- **Chunk Quality Validation** — Min-length, alphanumeric, and content-hash deduplication
+- **Producer-Consumer Pipeline**: Parallel file parsing (ThreadPool) → GPU batch embedding → progressive ChromaDB indexing
+- **Fast File Collection**: `git ls-files` for git repos (near-instant), `os.scandir` fallback, parallel change detection
+- **Ctrl+C Safe**: Each GPU batch is indexed immediately; interrupt loses at most one batch, resume skips already-indexed files
+- **Code Indexing**: Tree-sitter AST parsing for Python, TypeScript, JavaScript, PHP, HTML, CSS, YAML, JSON, Gherkin, Dart
+- **Semantic Chunking**: Split by embedding similarity drops (alternative to title-based)
+- **Recursive Chunking**: Priority-ordered separators with fallback
+- **Contextual Embeddings**: Prepend document context to chunks before embedding
+- **Chunk Quality Validation**: Min-length, alphanumeric, and content-hash deduplication
 
 ### Response Generation
-- **Inline Citations** — LLM responses cite sources with `[1]`, `[2]` references
-- **Configurable Reranker** — Local CrossEncoder or API-based (Cohere-compatible) with automatic fallback
-- **Token Budgeting** — Separate context budgets for document, code, and reference chunks
-- **Context Pre-Filtering** — Drop low-scoring chunks before LLM context
+- **Inline Citations**: LLM responses cite sources with `[1]`, `[2]` references
+- **Configurable Reranker**: Local CrossEncoder or API-based (Cohere-compatible) with automatic fallback
+- **Token Budgeting**: Separate context budgets for document, code, and reference chunks
+- **Context Pre-Filtering**: Drop low-scoring chunks before LLM context
 
 ### Knowledge & Agents
-- **Knowledge Graph** — Entity/relationship extraction, graph-augmented search (local/global/hybrid/mix modes)
-- **Persistent Memory** — SQLite-backed store with vector search, TTL expiration, per-client or global
-- **Workflow DAGs** — Multi-step task pipelines with dependency ordering and auto-status tracking
-- **Agent Templates** — YAML-defined personas (code-reviewer, security-reviewer, etc.)
-- **Local Agent Runner** — Search for context, inject system prompt, generate via LM Studio
+- **Knowledge Graph**: Entity/relationship extraction, graph-augmented search (local/global/hybrid/mix modes)
+- **Persistent Memory**: SQLite-backed store with vector search, TTL expiration, per-client or global
+- **Workflow DAGs**: Multi-step task pipelines with dependency ordering and auto-status tracking
+- **Agent Templates**: YAML-defined personas (code-reviewer, security-reviewer, etc.)
+- **Local Agent Runner**: Search for context, inject system prompt, generate via LM Studio
 - **Prompt Discovery** (optional): search a local prompt index and the live prompts.chat API; needs a prompts.chat client that is not included, see [Prompt library](#prompt-library-optional)
 
 ## Stack
@@ -75,13 +75,19 @@ A local-first knowledge engine with hybrid search, source connectors, plugin ext
 
 ## Quick Start
 
-**Requires Python 3.10+**
+Trove supports Python 3.11, 3.12 and 3.13. Code indexing needs tree-sitter-languages, which has no wheels for 3.13 yet, so on 3.13 everything works except code indexing.
 
 ```bash
 # Get the code and install dependencies
 git clone https://github.com/tomgould/trove.git
 cd trove
-python -m venv venv && source venv/bin/activate
+python -m venv .venv && source .venv/bin/activate
+
+# Install the CPU build of PyTorch first. Without this, pip pulls the much
+# larger CUDA build. Skip it if you want GPU support.
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+# The full stack: document parsers, LLM clients, MCP server, code indexing
 pip install -r requirements.txt
 
 # Create a new client (interactive wizard)
@@ -100,6 +106,35 @@ python scripts/ingest.py --client myproject
 # Use via MCP server (see MCP Server section below)
 python scripts/mcp_server.py
 ```
+
+### Reproducible installs
+
+`requirements.txt` and `pyproject.toml` give tested version ranges. For the exact versions CI tests with, add the constraints file for your Python version:
+
+```bash
+pip install -r requirements.txt -c constraints/py312.txt   # or py311.txt, py313.txt
+```
+
+### Installing as a package
+
+Trove also installs as a package, with extras so you only pull what you use:
+
+| Extra | Adds |
+|-------|------|
+| (none) | Hybrid search, ingestion of text, HTML and Markdown, source connectors, knowledge graph store |
+| `docs` | PDF, Word, Excel, PowerPoint and the other formats unstructured can parse |
+| `llm` | The OpenAI-compatible (LM Studio) and Anthropic clients, for agents, graph extraction and generated answers |
+| `mcp` | The MCP server |
+| `code` | Code indexing with tree-sitter (Python 3.11 and 3.12) |
+| `dev` | pytest, ruff and build |
+| `all` | `docs`, `llm`, `mcp` and `code`: the same stack as `requirements.txt` |
+
+```bash
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+pip install ".[mcp,docs]"
+```
+
+An installed copy provides the commands `trove-server`, `trove-search`, `trove-ingest`, `trove-sources` and `trove-create-client`. They look for clients in a `clients/` folder in the current directory. Run from a checkout, the scripts in `scripts/` use the checkout's own `clients/` folder.
 
 ## Creating a Client
 
@@ -201,6 +236,8 @@ Top chunks → Context filter (drop low-scoring)
 ```
 Trove/
 ├── core/
+│   ├── data/agents/          # Agent YAML templates (shipped in the package)
+│   ├── paths.py              # Where the clients and agents folders are
 │   ├── ingest.py             # Document processing with Unstructured
 │   ├── pipeline.py           # Producer-consumer ingestion pipeline
 │   ├── search/               # Hybrid search package
@@ -254,7 +291,6 @@ Trove/
 │   ├── server.py             # MCP server entry point, tool definitions, dispatcher
 │   ├── shared.py             # Shared state, cache, helpers
 │   └── handlers/             # Tool handler modules (clients, search, ingest, graph, memory, workflows, agents, prompts, sources)
-├── agents/                    # Global agent YAML templates
 ├── clients/
 │   ├── {name}/
 │   │   ├── client.yaml       # Config (including sources: section)
@@ -276,8 +312,11 @@ Trove/
 │   ├── run_agent.py          # CLI for running agents locally
 │   ├── watch_and_reindex.py  # Source sync + file watcher
 │   └── sync_prompts.py       # Sync prompts from prompts.chat API
+├── constraints/              # Exact versions from a working install, per Python version
 └── tests/
-    └── test_core.py          # 724 tests
+    ├── conftest.py           # Shared fixtures
+    ├── test_*.py             # One file per area: client, ingest, search, ranking, graph, ...
+    └── smoke/                # Install checks run by CI against a built wheel
 ```
 
 ## Client Configuration
@@ -539,7 +578,7 @@ Sources with `sync_on_ingest: true` in `client.yaml` automatically sync before e
 
 ### Automatic Reindexing (File Watcher)
 
-The watcher compares files on disk against a manifest saved during ingestion. It detects new, modified, and deleted files — only changed files are reindexed. If a client has `source_sync` configured, files are synced from the source directory before checking for changes.
+The watcher compares files on disk against a manifest saved during ingestion. It detects new, modified, and deleted files, and only changed files are reindexed. If a client has `source_sync` configured, files are synced from the source directory before checking for changes.
 
 ```bash
 # Dry-run to see what changed
@@ -630,7 +669,7 @@ python scripts/build_graph.py --all
 # Build even if graph.enabled is false in client.yaml
 python scripts/build_graph.py --client myproject --force
 
-# Graph saves after every batch — safe to cancel mid-run, resumes on next incremental run
+# Graph saves after every batch, so it is safe to cancel mid-run, resumes on next incremental run
 ```
 
 ### Local Agent Runner
@@ -672,7 +711,7 @@ python scripts/sync_prompts.py --reindex   # sync, then reindex the prompts clie
 Reindex all clients and rebuild knowledge graphs in one run. Requires LM Studio running with the configured model loaded.
 
 ```bash
-# Incremental (changes only — fast on most nights)
+# Incremental (changes only, fast on most nights)
 ./overnight-rebuild.sh
 
 # Full rebuild from scratch
@@ -717,6 +756,8 @@ Add to your Claude Code settings (`~/.claude/settings.json`) or project `.mcp.js
   }
 }
 ```
+
+With Trove installed as a package (`pip install ".[mcp]"`), use `"command": "trove-server"` with no `args`. It reads clients from `clients/` in the folder it is started in.
 
 ### Available Tools
 
@@ -790,5 +831,9 @@ See `CLAUDE.md` for architecture details, code guidelines, and module reference.
 ### Running Tests
 
 ```bash
-pytest tests/ -v
+pip install -r requirements.txt -c constraints/py312.txt
+pytest                         # the whole suite, several minutes
+pytest tests/test_search.py    # one area
 ```
+
+The suite downloads two small models from Hugging Face on first run (all-MiniLM-L6-v2 and ms-marco-MiniLM-L-6-v2). `tests/smoke/` holds the checks CI runs against a built wheel in a clean environment.

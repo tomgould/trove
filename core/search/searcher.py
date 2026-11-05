@@ -42,6 +42,19 @@ def chunk_source(chunk: dict) -> str:
     return metadata.get("source_file") or metadata.get("source") or ""
 
 
+def citation(chunk: dict) -> dict:
+    """Title, URL and section of a chunk, for citing it. Missing values are None.
+
+    Markdown chunks get these from frontmatter and headings (see core.markdown).
+    """
+    metadata = chunk.get("metadata") or {}
+    return {
+        "title": metadata.get("title") or None,
+        "url": metadata.get("url") or metadata.get("source_url") or None,
+        "section": metadata.get("section") or None,
+    }
+
+
 def filter_by_source(chunks: list[dict], source_filter) -> list[dict]:
     """Keep only chunks whose source file is in ``source_filter``."""
     allowed = set(source_filter)

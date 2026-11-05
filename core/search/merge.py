@@ -1,4 +1,4 @@
-"""Merge results from main index and conversation index."""
+"""Merge search results: main index with a conversation index, or several clients."""
 
 
 def merge_search_results(
@@ -53,3 +53,29 @@ def merge_search_results(
     merged.sort(key=get_score, reverse=True)
 
     return merged
+
+
+def merge_client_results(
+    client_results: dict[str, list[dict]],
+    k: int = 60,
+    top_k: int = 20,
+) -> list[dict]:
+    """Merge ranked results from several clients with Reciprocal Rank Fusion.
+
+    Each chunk is labelled with ``_source_client``. Ranks are compared, not raw
+    scores, because scores from different indexes are not on the same scale.
+    """
+    rrf_scores: dict[str, float] = {}
+    chunks_by_id: dict[str, dict] = {}
+
+    for client_name, results in client_results.items():
+        for rank, chunk in enumerate(results):
+            chunk_id = f"{client_name}:{chunk.get('id', rank)}"
+            chunk["_source_client"] = client_name
+            rrf_scores[chunk_id] = rrf_scores.get(chunk_id, 0) + 1.0 / (k + rank + 1)
+            chunks_by_id[chunk_id] = chunk
+
+    sorted_ids = sorted(rrf_scores, key=lambda cid: rrf_scores[cid], reverse=True)
+    for cid in sorted_ids:
+        chunks_by_id[cid]["_rrf_score"] = rrf_scores[cid]
+    return [chunks_by_id[cid] for cid in sorted_ids[:top_k]]

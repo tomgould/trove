@@ -180,6 +180,7 @@ class IngestionPipeline:
             return chunks
         except Exception as e:
             logger.error(f"Failed to parse {path.name}: {e}")
+            self._failed_files.append(str(path))
             return []
 
     def get_indexed_source_paths(self) -> set[str]:

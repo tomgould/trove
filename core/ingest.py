@@ -809,6 +809,7 @@ def ingest_directory(
     pipeline_searcher=None,
     parse_workers: int = 4,
     contextualize: bool = False,
+    stats_out: Optional[dict] = None,
 ) -> tuple[list[dict], list[list[float]]]:
     """
     Ingest all documents in a directory.
@@ -824,6 +825,8 @@ def ingest_directory(
         pipeline_searcher: When provided, use IngestionPipeline for parallel parse/embed/index
         parse_workers: Number of parallel parse workers for pipeline mode (default 4)
         contextualize: If True, prepend document context to chunks before embedding (pipeline mode)
+        stats_out: If given (pipeline mode), filled with the pipeline stats and the
+            number of files found ("files_found")
 
     Returns:
         Tuple of (all_chunks, all_embeddings)
@@ -907,6 +910,9 @@ def ingest_directory(
         )
         if stats["failed_files"]:
             logger.warning(f"Pipeline failed files: {stats['failed_files']}")
+        if stats_out is not None:
+            stats_out.update(stats)
+            stats_out["files_found"] = len(sorted_files)
 
         return [], []
 
@@ -1229,6 +1235,19 @@ def _manifest_path(client) -> Path:
     return client.index_path / MANIFEST_FILENAME
 
 
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for block in iter(lambda: fh.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _manifest_entry(path: Path) -> dict:
+    stat = path.stat()
+    return {"mtime": stat.st_mtime, "size": stat.st_size, "sha256": _file_sha256(path)}
+
+
 def build_file_manifest(
     directory: Path,
     extensions: tuple,
@@ -1245,7 +1264,9 @@ def build_file_manifest(
         exclude_patterns: Optional glob patterns to exclude (e.g., ["**/clients/**"])
 
     Returns:
-        Dict of {absolute_path: {"mtime": float, "size": int}}
+        Dict of {absolute_path: {"mtime": float, "size": int, "sha256": str}}.
+        The content hash lets an incremental run treat a file that was rewritten
+        with the same content (a scraper re-run) as unchanged.
     """
     import fnmatch
     exclude_patterns = exclude_patterns or []
@@ -1272,11 +1293,7 @@ def build_file_manifest(
                     if _excluded(f):
                         continue
                     try:
-                        stat = f.stat()
-                        manifest[str(f)] = {
-                            "mtime": stat.st_mtime,
-                            "size": stat.st_size,
-                        }
+                        manifest[str(f)] = _manifest_entry(f)
                     except (OSError, FileNotFoundError):
                         continue  # Skip broken symlinks
     else:
@@ -1284,11 +1301,7 @@ def build_file_manifest(
             if f.is_file() and f.suffix.lower() in extensions and not f.name.startswith("."):
                 if _excluded(f):
                     continue
-                stat = f.stat()
-                manifest[str(f)] = {
-                    "mtime": stat.st_mtime,
-                    "size": stat.st_size,
-                }
+                manifest[str(f)] = _manifest_entry(f)
     return manifest
 
 
@@ -1356,9 +1369,14 @@ def diff_file_manifest(
 
     modified_files = []
     for path in sorted(current_set & indexed_set):
-        cur = current_files[path]
-        idx = indexed_files[path]
-        if cur["mtime"] != idx["mtime"] or cur["size"] != idx["size"]:
+        if _entry_changed(current_files[path], indexed_files[path]):
             modified_files.append(path)
 
     return new_files, modified_files, deleted_files
+
+
+def _entry_changed(cur: dict, idx: dict) -> bool:
+    """Compare by content hash when both sides have one, else by mtime and size."""
+    if cur.get("sha256") and idx.get("sha256"):
+        return cur["sha256"] != idx["sha256"]
+    return cur.get("mtime") != idx.get("mtime") or cur.get("size") != idx.get("size")

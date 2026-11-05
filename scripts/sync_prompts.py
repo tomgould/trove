@@ -21,7 +21,7 @@ from pathlib import Path
 TROVE_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(TROVE_ROOT))
 
-from core.paths import default_clients_dir
+from core.client import add_clients_dir_argument, apply_clients_dir_argument, resolve_clients_dir
 
 try:
     from clients.prompts.api_client import PromptsAPIClient, PromptResult
@@ -39,7 +39,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger("sync-prompts")
 
-PROMPTS_DIR = default_clients_dir() / "prompts" / "documents" / "prompts_chat" / "prompts"
+
+
+def prompts_dir() -> Path:
+    """Where synced prompts are written: the prompts client's documents folder."""
+    return resolve_clients_dir() / "prompts" / "documents" / "prompts_chat" / "prompts"
 
 
 def slugify(text: str) -> str:
@@ -95,7 +99,7 @@ def sync_prompts(
     Returns list of newly created file paths.
     """
     api = PromptsAPIClient()
-    existing_ids = get_existing_ids(PROMPTS_DIR)
+    existing_ids = get_existing_ids(prompts_dir())
     logger.info(f"Found {len(existing_ids)} existing prompts on disk")
 
     new_prompts: dict[str, PromptResult] = {}
@@ -122,12 +126,12 @@ def sync_prompts(
             logger.info(f"  [DRY RUN] Would save: {pid}_{slugify(p.title)}.md — {p.title}")
         return []
 
-    PROMPTS_DIR.mkdir(parents=True, exist_ok=True)
+    prompts_dir().mkdir(parents=True, exist_ok=True)
     created: list[Path] = []
 
     for pid, p in new_prompts.items():
         filename = f"{pid}_{slugify(p.title)}.md"
-        filepath = PROMPTS_DIR / filename
+        filepath = prompts_dir() / filename
         content = prompt_to_markdown(p)
         filepath.write_text(content, encoding="utf-8")
         created.append(filepath)
@@ -142,7 +146,9 @@ def main():
     parser.add_argument("--pages", type=int, default=2, help="Pages to fetch per sort order (default: 2)")
     parser.add_argument("--dry-run", action="store_true", help="Preview without writing files")
     parser.add_argument("--reindex", action="store_true", help="Run incremental reindex after sync")
+    add_clients_dir_argument(parser)
     args = parser.parse_args()
+    apply_clients_dir_argument(args)
 
     if PromptsAPIClient is None:
         print(PROMPT_LIBRARY_UNAVAILABLE, file=sys.stderr)
@@ -153,7 +159,8 @@ def main():
     if args.reindex and created and not args.dry_run:
         logger.info("Running incremental reindex for prompts client...")
         subprocess.run(
-            [sys.executable, str(Path(__file__).parent / "ingest.py"), "--client", "prompts"],
+            [sys.executable, str(Path(__file__).parent / "ingest.py"), "--client", "prompts",
+             "--clients-dir", str(resolve_clients_dir())],
         )
 
 

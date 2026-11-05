@@ -22,6 +22,7 @@ from pathlib import Path
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from core.client import add_clients_dir_argument, apply_clients_dir_argument
 from core.client import load_client, discover_clients
 from core.graph import KnowledgeGraph
 from core.graph.extractor import GraphExtractor
@@ -362,7 +363,9 @@ def main():
     parser.add_argument("--force", action="store_true", help="Build even if graph.enabled is false")
     parser.add_argument("--verbose", action="store_true", help="Verbose logging")
 
+    add_clients_dir_argument(parser)
     args = parser.parse_args()
+    apply_clients_dir_argument(args)
 
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)

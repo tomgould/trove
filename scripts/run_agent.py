@@ -19,15 +19,15 @@ from pathlib import Path
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from core.client import add_clients_dir_argument, apply_clients_dir_argument
 from core.agents import AgentLoader
 from core.client import load_client, discover_clients
 from core.llm import create_provider_from_config
-from core.paths import default_agents_dir, default_clients_dir
+from core.paths import default_agents_dir
 from core.runner import AgentRunner
 from core.search import HybridSearcher
 
 AGENTS_DIR = default_agents_dir()
-CLIENTS_DIR = default_clients_dir()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -88,7 +88,7 @@ def list_agents():
 
 def list_clients():
     """List all available clients."""
-    clients = discover_clients(CLIENTS_DIR)
+    clients = discover_clients()
     if not clients:
         print("No clients found.")
         return
@@ -96,7 +96,7 @@ def list_clients():
     print(f"\nAvailable Clients ({len(clients)}):\n")
     for name in clients:
         try:
-            c = load_client(name, CLIENTS_DIR)
+            c = load_client(name)
             index_exists = c.has_index
             status = "indexed" if index_exists else "no index"
             print(f"  {name:<30} {c.name} ({status})")
@@ -145,7 +145,9 @@ def main():
     parser.add_argument("--store-memory", action="store_true", help="Store result in memory")
     parser.add_argument("--quiet", "-q", action="store_true", help="Suppress info logging")
 
+    add_clients_dir_argument(parser)
     args = parser.parse_args()
+    apply_clients_dir_argument(args)
 
     if args.quiet:
         logging.getLogger().setLevel(logging.WARNING)
@@ -178,7 +180,7 @@ def main():
 
     # Load client
     try:
-        client = load_client(args.client, CLIENTS_DIR)
+        client = load_client(args.client)
     except Exception as e:
         print(f"Error loading client '{args.client}': {e}", file=sys.stderr)
         sys.exit(1)

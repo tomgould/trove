@@ -16,15 +16,25 @@ from dataclasses import dataclass, field
 from typing import Optional
 import requests
 
-from openai import OpenAI
-from anthropic import Anthropic
-
 from core.plugins.interfaces import BaseLLMProvider
 
 logger = logging.getLogger(__name__)
 
 # Error prefix used by all LLM providers for machine-detectable error responses
 LLM_ERROR_PREFIX = "Error: "
+
+
+def _require(module: str):
+    """Import an optional LLM client library, or explain which extra installs it."""
+    import importlib
+
+    try:
+        return importlib.import_module(module)
+    except ImportError as e:
+        raise ImportError(
+            f"The '{module}' package is needed for this LLM provider. "
+            "Install it with: pip install 'trove-knowledge-engine[llm]'"
+        ) from e
 
 
 def is_llm_error(response: str) -> bool:
@@ -355,7 +365,7 @@ class LMStudioProvider(LLMProvider):
         base_url: str = DEFAULT_LMSTUDIO_URL,
         model: str = DEFAULT_LMSTUDIO_MODEL,
     ):
-        self.client = OpenAI(base_url=base_url, api_key="not-needed")
+        self.client = _require("openai").OpenAI(base_url=base_url, api_key="not-needed")
         self.model = model
         logger.info(f"Initialized LM Studio OpenAI-compatible provider at {base_url}")
 
@@ -415,7 +425,7 @@ class ClaudeProvider(LLMProvider):
         if not api_key:
             raise ValueError("ANTHROPIC_API_KEY not set")
 
-        self.client = Anthropic(api_key=api_key)
+        self.client = _require("anthropic").Anthropic(api_key=api_key)
         self.model = model
         logger.info(f"Initialized Claude provider with model {model}")
 

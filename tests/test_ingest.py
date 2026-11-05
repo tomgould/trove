@@ -2,6 +2,8 @@
 Document ingestion, chunking and ingestion jobs.
 """
 
+import importlib.util
+
 import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -893,6 +895,10 @@ class TestIngestionPipeline:
         assert "chunks_per_second" in stats
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("tree_sitter_languages") is None,
+    reason="code indexing needs tree-sitter-languages (the code extra, not available on Python 3.13)",
+)
 class TestProcessPoolChunking:
     """Test that code chunking uses multiprocessing."""
 

@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "A local-first knowledge engine with hybrid search, source connectors, plugin extensibility, and MCP integration for Claude Code."
 readme = "README.md"
 license = {file = "LICENSE"}
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [
     {name = "Tom Gould"},
 ]
@@ -18,37 +18,59 @@ classifiers = [
     "Intended Audience :: Developers",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Text Processing :: Indexing",
-    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
 ]
 
+# Ranges are the versions tested in CI. Keep them in step with requirements.txt.
+# The core install ingests and searches text, HTML and Markdown.
 dependencies = [
-    "unstructured[all-docs]>=0.12.0",
-    "sentence-transformers>=2.2.0",
-    "chromadb>=0.4.0",
-    "rank-bm25>=0.2.2",
-    "openai>=1.0.0",
-    "anthropic>=0.18.0",
-    "nltk>=3.8.0",
-    "networkx>=3.0",
-    "pyyaml>=6.0",
-    "python-dotenv>=1.0.0",
-    "mcp>=1.0.0,<2",
-    "tree-sitter>=0.21.0,<0.22.0",
-    "tree-sitter-languages>=1.10.0",
-    "httpx>=0.25.0",
-    "markdownify>=0.11.0",
-    "trafilatura>=1.6.0",
-    "psutil>=5.9.0",
-    "requests>=2.28.0",
+    "torch>=2.15,<3",
+    "sentence-transformers>=6.2,<7",
+    "chromadb>=1.5,<2",
+    "rank-bm25>=0.2.2,<0.3",
+    "unstructured[md]>=0.27,<0.28",
+    "nltk>=3.10,<4",
+    "networkx>=3.6,<4",
+    "pyyaml>=6.0,<7",
+    "python-dotenv>=1.2,<2",
+    "httpx>=0.28,<1",
+    "markdownify>=1.2,<2",
+    "trafilatura>=2.3,<3",
+    "psutil>=7.2,<8",
+    "requests>=2.34,<3",
 ]
 
 [project.optional-dependencies]
+# PDF, Office and the other document formats
+docs = [
+    "unstructured[all-docs]>=0.27,<0.28",
+]
+# LM Studio and Claude clients, for agents, graph extraction and RAG answers
+llm = [
+    "openai>=3.46,<4",
+    "anthropic>=2.6,<3",
+]
+# The MCP server
+mcp = [
+    "mcp>=1.30,<2",
+]
+# Code indexing. tree-sitter-languages has no wheels for Python 3.13
+code = [
+    "tree-sitter>=0.21.3,<0.22; python_version < '3.13'",
+    "tree-sitter-languages>=1.10.2,<1.11; python_version < '3.13'",
+]
 dev = [
-    "pytest>=7.0.0",
-    "ruff>=0.4.0",
-    "pre-commit>=3.0.0",
+    "pytest>=9.2,<10",
+    "ruff==0.17.1",
+    "build>=1.2",
+]
+# Everything: the full stack. requirements.txt is this plus pytest
+all = [
+    "trove-knowledge-engine[docs,llm,mcp,code]",
 ]
 
 [project.scripts]
@@ -58,7 +80,7 @@ trove-server = "scripts.mcp_server:main"
 include = ["core*", "mcp_server*", "scripts*"]
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py311"
 line-length = 120
 
 [tool.ruff.lint]

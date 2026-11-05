@@ -20,11 +20,92 @@ from core.client import (
     DEFAULT_DOCUMENT_EXTENSIONS,
     _KNOWN_EMBEDDING_DIMS,
     discover_clients,
+    load_client,
+    resolve_clients_dir,
     validate_config,
 )
-from core.paths import default_clients_dir
 
-CLIENTS_DIR = default_clients_dir()
+# Client names: 3 to 64 letters, digits, "_" and "-", starting and ending with a
+# letter or digit. ChromaDB requires that for the collection name, and a leading
+# "_" or "." would hide the folder from discover_clients.
+CLIENT_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{1,62}[A-Za-z0-9]$")
+
+
+class ClientExistsError(FileExistsError):
+    """Raised when a client.yaml is already there and --force was not given."""
+
+
+def validate_client_name(name: str) -> str:
+    """Return ``name`` if it is a usable client folder name, else raise ValueError."""
+    if not CLIENT_NAME_RE.match(name or ""):
+        raise ValueError(
+            f"Invalid client name '{name}': use 3 to 64 letters, digits, '_' or '-', "
+            "starting and ending with a letter or digit."
+        )
+    return name
+
+
+def build_minimal_config(
+    name: str,
+    description: str = "",
+    documents_dir: str | None = None,
+    embedding_model: str = "all-MiniLM-L6-v2",
+) -> dict:
+    """The smallest client.yaml that loads cleanly; everything else uses the defaults."""
+    config: dict = {"name": name, "machine_name": name}
+    if description:
+        config["description"] = description
+    config["paths"] = {
+        "documents": str(Path(documents_dir).expanduser().resolve()) if documents_dir else "documents",
+        "index": "index",
+        "prompts": "prompts",
+    }
+    embedding: dict = {"model": embedding_model}
+    if embedding_model in _KNOWN_EMBEDDING_DIMS:
+        embedding["dimension"] = _KNOWN_EMBEDDING_DIMS[embedding_model]
+    config["embedding"] = embedding
+    return config
+
+
+def create_client_from_args(
+    name: str,
+    description: str = "",
+    documents_dir: str | None = None,
+    embedding_model: str = "all-MiniLM-L6-v2",
+    force: bool = False,
+    clients_dir: Path | None = None,
+) -> Path:
+    """Create a client without prompts and return its folder.
+
+    Raises ValueError for a bad name or config, ClientExistsError if the client
+    already has a client.yaml and ``force`` is not set. With ``force`` only the
+    client.yaml is rewritten; documents and index are left alone.
+    """
+    validate_client_name(name)
+    if documents_dir and not Path(documents_dir).expanduser().is_dir():
+        raise ValueError(f"Documents folder not found: {documents_dir}")
+
+    config = build_minimal_config(name, description, documents_dir, embedding_model)
+    problems = [w for w in validate_config(config) if "Unknown" not in w]
+    if problems:
+        raise ValueError("; ".join(problems))
+
+    client_path = resolve_clients_dir(clients_dir) / name
+    config_path = client_path / "client.yaml"
+    if config_path.exists() and not force:
+        raise ClientExistsError(f"Client '{name}' already exists at {client_path}. Use --force to overwrite its client.yaml.")
+
+    client_path.mkdir(parents=True, exist_ok=True)
+    for sub in ("index", "prompts"):
+        (client_path / sub).mkdir(exist_ok=True)
+    if not documents_dir:
+        (client_path / "documents").mkdir(exist_ok=True)
+    with open(config_path, "w") as f:
+        yaml.safe_dump(config, f, default_flow_style=False, sort_keys=False)
+
+    # Prove it loads before reporting success
+    load_client(name, clients_dir=client_path.parent)
+    return client_path
 
 
 def slugify(text: str) -> str:
@@ -128,7 +209,7 @@ def create_client():
     print("=" * 50)
 
     # Show existing clients
-    existing = discover_clients(CLIENTS_DIR)
+    existing = discover_clients()
     if existing:
         print(f"\nExisting clients: {', '.join(existing)}")
 
@@ -143,7 +224,7 @@ def create_client():
     machine_name = prompt_input("Machine name (directory name)", default=suggested_machine_name)
 
     # Check if client already exists
-    client_path = CLIENTS_DIR / machine_name
+    client_path = resolve_clients_dir() / machine_name
     if client_path.exists():
         print(f"\n  Warning: Client '{machine_name}' already exists at {client_path}")
         if not prompt_yes_no("Overwrite existing client?", default=False):
@@ -992,20 +1073,48 @@ Always cite the source documents when providing information."""
 def main(argv: list[str] | None = None):
     import argparse
 
+    from core.client import add_clients_dir_argument, apply_clients_dir_argument
+
     parser = argparse.ArgumentParser(
         prog="trove-create-client",
         description=(
-            "Create a new Trove client with an interactive wizard. "
-            f"Clients are created in {CLIENTS_DIR}."
+            "Create a new Trove client. With --name it runs without questions; "
+            "with no arguments it starts the interactive wizard."
         ),
     )
-    parser.parse_args(argv)
+    parser.add_argument("--name", help="Client folder name: letters, digits, '_' or '-'")
+    parser.add_argument("--description", default="", help="One-line description")
+    parser.add_argument("--documents-dir", metavar="PATH",
+                        help="Index documents from this folder instead of <client>/documents")
+    parser.add_argument("--embedding-model", default="all-MiniLM-L6-v2", metavar="MODEL",
+                        help="sentence-transformers model name (default: all-MiniLM-L6-v2)")
+    parser.add_argument("--force", action="store_true", help="Overwrite an existing client.yaml")
+    add_clients_dir_argument(parser)
+    args = parser.parse_args(argv)
+    apply_clients_dir_argument(args)
+
+    if args.name is None:
+        if args.description or args.documents_dir or args.force:
+            parser.error("--name is required with --description, --documents-dir or --force")
+        try:
+            create_client()
+        except KeyboardInterrupt:
+            print("\n\nAborted.")
+            sys.exit(1)
+        return
 
     try:
-        create_client()
-    except KeyboardInterrupt:
-        print("\n\nAborted.")
+        path = create_client_from_args(
+            args.name,
+            description=args.description,
+            documents_dir=args.documents_dir,
+            embedding_model=args.embedding_model,
+            force=args.force,
+        )
+    except (ValueError, ClientExistsError) as e:
+        print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
+    print(f"Created client '{args.name}' at {path}")
 
 
 if __name__ == "__main__":

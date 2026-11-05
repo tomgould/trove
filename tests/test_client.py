@@ -41,10 +41,10 @@ def test_discover_clients():
     with tempfile.TemporaryDirectory() as tmpdir:
         clients_dir = Path(tmpdir)
 
-        # Create test client directories
-        (clients_dir / "client_a").mkdir()
-        (clients_dir / "client_b").mkdir()
-        (clients_dir / ".hidden").mkdir()  # Should be ignored
+        # Create test client directories (a client is a folder with a client.yaml)
+        for name in ("client_a", "client_b", ".hidden"):
+            (clients_dir / name).mkdir()
+            (clients_dir / name / "client.yaml").write_text(f"name: {name}\n")
 
         clients = discover_clients(clients_dir)
 
@@ -585,9 +585,9 @@ class TestLoadClient:
         """discover_clients finds all client directories."""
         from core.client import discover_clients
 
-        (tmp_path / "alpha").mkdir()
-        (tmp_path / "beta").mkdir()
-        (tmp_path / ".hidden").mkdir()  # Should be excluded
+        for name in ("alpha", "beta", ".hidden"):  # .hidden should be excluded
+            (tmp_path / name).mkdir()
+            (tmp_path / name / "client.yaml").write_text(f"name: {name}\n")
 
         clients = discover_clients(clients_dir=tmp_path)
         assert "alpha" in clients
@@ -731,3 +731,180 @@ class TestHasIndex:
         client = load_client(make_client("alpha"), clients_dir=clients_dir)
         (client.index_path / INDEX_MARKER_FILE).write_bytes(b"")
         assert client.has_index is True
+
+
+class TestClientsDir:
+    """TROVE_CLIENTS_DIR and --clients-dir: one place decides where clients live."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_override(self):
+        from core.client import set_clients_dir
+
+        set_clients_dir(None)
+        yield
+        set_clients_dir(None)
+
+    def test_default_is_the_repo_clients_folder(self, monkeypatch):
+        from core.client import CLIENTS_DIR_ENV, resolve_clients_dir
+        from core.paths import default_clients_dir
+
+        monkeypatch.delenv(CLIENTS_DIR_ENV, raising=False)
+        assert resolve_clients_dir() == default_clients_dir()
+
+    def test_env_var_overrides_default(self, tmp_path, monkeypatch):
+        from core.client import CLIENTS_DIR_ENV, resolve_clients_dir
+
+        monkeypatch.setenv(CLIENTS_DIR_ENV, str(tmp_path))
+        assert resolve_clients_dir() == tmp_path
+
+    def test_flag_overrides_env_var(self, tmp_path, monkeypatch):
+        from core.client import CLIENTS_DIR_ENV, resolve_clients_dir, set_clients_dir
+
+        monkeypatch.setenv(CLIENTS_DIR_ENV, str(tmp_path / "env"))
+        set_clients_dir(tmp_path / "flag")
+        assert resolve_clients_dir() == tmp_path / "flag"
+
+    def test_explicit_argument_wins(self, tmp_path):
+        from core.client import resolve_clients_dir, set_clients_dir
+
+        set_clients_dir(tmp_path / "flag")
+        assert resolve_clients_dir(tmp_path / "arg") == tmp_path / "arg"
+
+    def test_load_and_discover_use_env_var(self, tmp_path, monkeypatch):
+        from core.client import CLIENTS_DIR_ENV, discover_clients, load_client
+
+        (tmp_path / "proj").mkdir()
+        (tmp_path / "proj" / "client.yaml").write_text("name: Proj\nmachine_name: proj\n")
+        monkeypatch.setenv(CLIENTS_DIR_ENV, str(tmp_path))
+        assert discover_clients() == ["proj"]
+        assert load_client("proj").path == tmp_path / "proj"
+
+    def test_discover_skips_underscore_and_folders_without_yaml(self, tmp_path):
+        from core.client import discover_clients
+
+        for name in ("real", "_template", ".git"):
+            (tmp_path / name).mkdir()
+            (tmp_path / name / "client.yaml").write_text("name: x\n")
+        (tmp_path / "notes").mkdir()  # no client.yaml
+        assert discover_clients(tmp_path) == ["real"]
+
+    def test_absolute_and_symlinked_documents_path(self, tmp_path):
+        from core.client import load_client
+
+        outside = tmp_path / "scraped"
+        outside.mkdir()
+        clients = tmp_path / "clients"
+        (clients / "abs").mkdir(parents=True)
+        (clients / "abs" / "client.yaml").write_text(f"name: Abs\npaths:\n  documents: {outside}\n")
+        assert load_client("abs", clients_dir=clients).documents_path == outside
+
+        (clients / "linked").mkdir()
+        (clients / "linked" / "client.yaml").write_text("name: Linked\n")
+        (clients / "linked" / "documents").symlink_to(outside, target_is_directory=True)
+        client = load_client("linked", clients_dir=clients)
+        assert client.documents_path.resolve() == outside.resolve()
+
+    def test_clients_dir_argument_helpers(self, tmp_path):
+        import argparse
+
+        from core.client import add_clients_dir_argument, apply_clients_dir_argument, resolve_clients_dir
+
+        parser = argparse.ArgumentParser()
+        add_clients_dir_argument(parser)
+        apply_clients_dir_argument(parser.parse_args(["--clients-dir", str(tmp_path)]))
+        assert resolve_clients_dir() == tmp_path
+
+
+class TestCreateClientNonInteractive:
+    """create_client.py --name ... creates a client without prompts."""
+
+    def test_created_client_loads(self, clients_dir):
+        from core.client import discover_clients, load_client
+        from scripts.create_client import main
+
+        main(["--name", "news-site", "--description", "Scraped news", "--clients-dir", str(clients_dir)])
+        client = load_client("news-site", clients_dir=clients_dir)
+        assert client.name == "news-site"
+        assert client.config["description"] == "Scraped news"
+        assert client.documents_path == clients_dir / "news-site" / "documents"
+        assert client.documents_path.is_dir()
+        assert discover_clients(clients_dir) == ["news-site"]
+
+    def test_documents_dir_and_embedding_model(self, clients_dir, tmp_path):
+        from core.client import load_client
+        from scripts.create_client import create_client_from_args
+
+        docs = tmp_path / "scrape-output"
+        docs.mkdir()
+        create_client_from_args("proj", documents_dir=str(docs), embedding_model="BAAI/bge-base-en-v1.5",
+                                clients_dir=clients_dir)
+        client = load_client("proj", clients_dir=clients_dir)
+        assert client.documents_path == docs.resolve()
+        assert client.embedding_config["model"] == "BAAI/bge-base-en-v1.5"
+        assert client.embedding_config["dimension"] == 768
+
+    def test_refuses_to_overwrite_without_force(self, clients_dir, capsys):
+        from scripts.create_client import main
+
+        main(["--name", "proj", "--clients-dir", str(clients_dir)])
+        with pytest.raises(SystemExit) as excinfo:
+            main(["--name", "proj", "--description", "second", "--clients-dir", str(clients_dir)])
+        assert excinfo.value.code == 1
+        assert "already exists" in capsys.readouterr().err
+        main(["--name", "proj", "--description", "second", "--force", "--clients-dir", str(clients_dir)])
+        assert "second" in (clients_dir / "proj" / "client.yaml").read_text()
+
+    @pytest.mark.parametrize("bad", ["ab", "_template", ".hidden", "has space", "trailing-", "a/b", "x" * 65])
+    def test_rejects_bad_names(self, clients_dir, bad, capsys):
+        from scripts.create_client import main
+
+        with pytest.raises(SystemExit) as excinfo:
+            main(["--name", bad, "--clients-dir", str(clients_dir)])
+        assert excinfo.value.code == 1
+        assert "Invalid client name" in capsys.readouterr().err
+        assert list(clients_dir.iterdir()) == []
+
+    def test_missing_documents_dir_is_rejected(self, clients_dir, tmp_path):
+        from scripts.create_client import create_client_from_args
+
+        with pytest.raises(ValueError, match="Documents folder not found"):
+            create_client_from_args("proj", documents_dir=str(tmp_path / "nope"), clients_dir=clients_dir)
+
+    def test_no_arguments_runs_the_wizard(self, monkeypatch):
+        import scripts.create_client as cli
+
+        called = []
+        monkeypatch.setattr(cli, "create_client", lambda: called.append(True))
+        cli.main([])
+        assert called == [True]
+
+
+class TestScriptsTakeClientsDir:
+    """Every CLI script accepts --clients-dir and its no-argument load_client calls follow it."""
+
+    SCRIPTS = ["build_graph", "run_agent", "search", "evaluate", "benchmark_embeddings",
+               "watch_and_reindex", "sync_prompts", "sources", "ingest", "create_client"]
+
+    @pytest.mark.parametrize("script", SCRIPTS)
+    def test_help_lists_clients_dir(self, script, monkeypatch, capsys):
+        import importlib
+        import sys
+
+        module = importlib.import_module(f"scripts.{script}")
+        entry = getattr(module, "_main", None) or module.main
+        monkeypatch.setattr(sys, "argv", [script, "--help"])
+        with pytest.raises(SystemExit) as excinfo:
+            entry(["--help"]) if script == "create_client" else entry()
+        assert excinfo.value.code == 0
+        assert "--clients-dir" in capsys.readouterr().out
+
+    @pytest.mark.parametrize("script", ["search", "ingest"])
+    def test_list_uses_clients_dir(self, script, make_client, clients_dir, monkeypatch, capsys):
+        import importlib
+        import sys
+
+        make_client("outside-repo")
+        module = importlib.import_module(f"scripts.{script}")
+        monkeypatch.setattr(sys, "argv", [script, "--clients-dir", str(clients_dir), "--list"])
+        module.main()
+        assert "outside-repo" in capsys.readouterr().out

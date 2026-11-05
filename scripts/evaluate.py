@@ -23,6 +23,7 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from core.client import add_clients_dir_argument, apply_clients_dir_argument
 from core.client import load_client, discover_clients
 from core.evaluation import (
     EvalReport,
@@ -262,7 +263,9 @@ Examples:
     parser.add_argument("--output", help="Write markdown report to file")
     parser.add_argument("--verbose", "-v", action="store_true", help="Show per-query details")
 
+    add_clients_dir_argument(parser)
     args = parser.parse_args()
+    apply_clients_dir_argument(args)
 
     if args.list:
         list_clients_with_datasets()

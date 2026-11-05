@@ -13,7 +13,8 @@ from core.search import HybridSearcher, SearchResult, SearchQuality
 from core.memory import MemoryStore
 from core.workflow import WorkflowEngine
 from core.agents import AgentLoader
-from core.paths import default_agents_dir, default_clients_dir
+from core.client import resolve_clients_dir
+from core.paths import default_agents_dir
 from core.llm import (
     LLMProvider,
     LMStudioProvider,
@@ -31,7 +32,8 @@ logger = logging.getLogger("trove-mcp")
 # ---------------------------------------------------------------------------
 
 TROVE_ROOT = Path(__file__).parent.parent
-CLIENTS_DIR = default_clients_dir()
+# Read once at start-up: --clients-dir does not apply here, TROVE_CLIENTS_DIR does
+CLIENTS_DIR = resolve_clients_dir()
 
 # Client name validation — alphanumeric, hyphens, underscores only
 _VALID_CLIENT_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")

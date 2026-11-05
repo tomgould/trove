@@ -18,6 +18,7 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from core.client import add_clients_dir_argument, apply_clients_dir_argument
 from core.client import load_client, discover_clients
 
 logging.basicConfig(
@@ -227,7 +228,9 @@ def _main():
     list_parser = subparsers.add_parser("list", help="List configured sources")
     list_parser.add_argument("--client", "-c", required=True, help="Client name")
 
+    add_clients_dir_argument(parser)
     args = parser.parse_args()
+    apply_clients_dir_argument(args)
 
     if not args.command:
         parser.print_help()

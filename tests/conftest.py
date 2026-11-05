@@ -34,3 +34,12 @@ def make_client(clients_dir):
         return name
 
     return _make
+
+
+@pytest.fixture(autouse=True)
+def _reset_clients_dir_override():
+    """--clients-dir sets a process-wide override; never let it leak between tests."""
+    yield
+    from core.client import set_clients_dir
+
+    set_clients_dir(None)

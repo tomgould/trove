@@ -24,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import chromadb
 from sentence_transformers import SentenceTransformer
 
+from core.client import add_clients_dir_argument, apply_clients_dir_argument
 from core.client import load_client
 from core.evaluation import load_eval_dataset, compute_retrieval_metrics, EvalResult, aggregate_metrics
 
@@ -212,7 +213,9 @@ def main():
         help="Comma-separated model names (e.g., 'all-MiniLM-L6-v2,BAAI/bge-base-en-v1.5')",
     )
     parser.add_argument("--output", "-o", help="Output JSON file path")
+    add_clients_dir_argument(parser)
     args = parser.parse_args()
+    apply_clients_dir_argument(args)
 
     client = load_client(args.client)
     model_names = [m.strip() for m in args.models.split(",")]

@@ -25,6 +25,7 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from core.client import add_clients_dir_argument, apply_clients_dir_argument
 from core.client import load_client, discover_clients
 from core.ingest import (
     DocumentIngestor,
@@ -275,7 +276,9 @@ def main():
     parser.add_argument("--verbose", "-v", action="store_true")
     parser.add_argument("--dry-run", "-n", action="store_true")
     parser.add_argument("--client", "-c", help="Only process specific client")
+    add_clients_dir_argument(parser)
     args = parser.parse_args()
+    apply_clients_dir_argument(args)
 
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)

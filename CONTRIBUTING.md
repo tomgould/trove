@@ -15,7 +15,7 @@ cd trove
 python -m venv .venv
 source .venv/bin/activate
 
-# The CPU build of PyTorch first, then the full stack at the versions CI uses
+# The CPU build of PyTorch first, then the full stack at the tested versions
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt -c constraints/py312.txt   # match your Python version
 pip install -e ".[dev]"

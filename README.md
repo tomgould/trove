@@ -109,11 +109,13 @@ python scripts/mcp_server.py
 
 ### Reproducible installs
 
-`requirements.txt` and `pyproject.toml` give tested version ranges. For the exact versions CI tests with, add the constraints file for your Python version:
+`requirements.txt` and `pyproject.toml` give tested version ranges. For the exact versions from a tested install, add the constraints file for your Python version:
 
 ```bash
 pip install -r requirements.txt -c constraints/py312.txt   # or py311.txt, py313.txt
 ```
+
+`constraints/py311.txt` needs Python 3.11.5 or later, because one pinned package (soupsieve 4.0.1) does. On an earlier 3.11 release, install without the constraints file.
 
 ### Installing as a package
 
@@ -316,7 +318,7 @@ Trove/
 └── tests/
     ├── conftest.py           # Shared fixtures
     ├── test_*.py             # One file per area: client, ingest, search, ranking, graph, ...
-    └── smoke/                # Install checks run by CI against a built wheel
+    └── smoke/                # Install checks for a built wheel
 ```
 
 ## Client Configuration
@@ -836,4 +838,4 @@ pytest                         # the whole suite, several minutes
 pytest tests/test_search.py    # one area
 ```
 
-The suite downloads two small models from Hugging Face on first run (all-MiniLM-L6-v2 and ms-marco-MiniLM-L-6-v2). `tests/smoke/` holds the checks CI runs against a built wheel in a clean environment.
+The suite downloads two small models from Hugging Face on first run (all-MiniLM-L6-v2 and ms-marco-MiniLM-L-6-v2). `tests/smoke/` holds checks for a built wheel installed in a clean environment.

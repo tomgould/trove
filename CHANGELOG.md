@@ -11,7 +11,7 @@ Trove is active again. See [docs/REVIVAL-PLAN.md](docs/REVIVAL-PLAN.md) for the 
 ### Dependencies and Python versions
 - Supported Python is 3.11, 3.12 and 3.13. Python 3.10 is no longer supported: it reached end of life in October 2026, and current releases of unstructured, numpy and networkx need 3.11.
 - Every dependency has a tested range instead of a bare lower bound, the same in `requirements.txt` and `pyproject.toml`.
-- `constraints/py311.txt`, `py312.txt` and `py313.txt` hold the exact versions from a working install. CI installs with them.
+- `constraints/py311.txt`, `py312.txt` and `py313.txt` hold the exact versions from a working install.
 - The package has extras: `docs`, `llm`, `mcp`, `code`, `dev`, and `all` for the full stack. The core install ingests and searches text, HTML and Markdown on its own. `pip install -r requirements.txt` still installs everything.
 - The OpenAI and Anthropic clients are imported only when an LLM provider is created, so the core install works without them.
 - Code indexing (tree-sitter-languages) is not available on Python 3.13, which has no wheels for it.
@@ -19,19 +19,19 @@ Trove is active again. See [docs/REVIVAL-PLAN.md](docs/REVIVAL-PLAN.md) for the 
 ### Fixes
 - `trove-server` now starts: `scripts/mcp_server.py` has the `main()` the entry point names.
 - The `source_filter` search option works. It compared `metadata["source"]`, but chunks store `source_file`, so it never matched.
-- "No index" checks are truthful. They tested whether the index folder existed, which `load_client` always made true. A client now has an index once ChromaDB has written to it (`Client.has_index`).
+- "No index" checks are truthful. They tested whether the index folder existed, which `load_client` always made true. A client now counts as indexed once its index holds at least one chunk (`Client.has_index`). Search refuses a client with nothing indexed; ingestion, including the MCP ingest tools, accepts it.
 - `load_client` raises `ClientNotFoundError` (a `FileNotFoundError`) for a name with no client folder, listing the clients that exist, and creates nothing. It used to create folders for the mistyped name and carry on with defaults. The CLI scripts print the error and exit with status 1.
 - `scripts/sync_prompts.py` and the `trove_prompts_*` MCP tools say "The prompt library is not available" when the optional prompts.chat client (`clients/prompts/api_client.py`, not in this repository) is missing, instead of failing on the import.
 
 ### Packaging
-- A built wheel installs and runs. It adds the console scripts `trove-search`, `trove-ingest`, `trove-sources` and `trove-create-client` next to `trove-server`.
+- A built wheel installs and runs. It adds the console scripts `trove-search`, `trove-ingest`, `trove-sources` and `trove-create-client` next to `trove-server`. `trove-server` without the `mcp` extra says which extra to install, and `trove-create-client --help` prints usage instead of starting the wizard.
 - The agent templates moved from `agents/` to `core/data/agents/` and ship inside the package. If you added your own templates to `agents/`, move them there.
 - An installed copy keeps clients in `clients/` under the current directory. A source checkout keeps using its own `clients/`.
 
 ### Tests and CI
 - `tests/test_core.py` is split into one file per area, with shared fixtures in `tests/conftest.py`. All 724 original tests are still collected, and each fix above has a regression test.
 - The search integration test builds a small index from the example client's settings instead of needing an internal client, so it runs everywhere instead of always being skipped.
-- CI runs on Python 3.11, 3.12 and 3.13, pins every action to a commit, and builds the wheel, installs it in a clean environment with no extras and runs a smoke test that ingests and searches a folder of Markdown files and starts the MCP server.
+- `tests/smoke/` checks a built wheel in a clean environment with no extras: it ingests and searches a folder of Markdown files through the console scripts and starts the MCP server.
 
 ### Migration
 - No on-disk format changed. Existing indexes keep working.

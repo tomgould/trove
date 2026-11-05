@@ -2,8 +2,8 @@
 Agent template loader for Trove agent orchestration.
 
 Loads YAML-defined reusable prompt configurations for specialized roles.
-Agents are stored in the `agents/` directory at Trove root, each as a
-separate YAML file with name, description, system_prompt, and tags.
+The bundled templates live in `core/data/agents/` (see core.paths.default_agents_dir),
+each a separate YAML file with name, description, system_prompt, and tags.
 """
 
 from __future__ import annotations

@@ -886,6 +886,36 @@ class TestRelativeClientsDir:
         assert "demo" in listing and "error" not in listing, listing
         assert "ready" in listing, listing
 
+    def test_absolute_and_relative_forms_share_one_manifest(self, tmp_path, capsys, monkeypatch):
+        """Regression: switching between an absolute and a relative --clients-dir re-embedded every file."""
+        import json
+
+        from core.client import CLIENTS_DIR_ENV, set_clients_dir
+
+        monkeypatch.delenv(CLIENTS_DIR_ENV, raising=False)
+        work = tmp_path / "work"
+        docs = work / "projects" / "demo" / "documents"
+        docs.mkdir(parents=True)
+        (docs.parent / "client.yaml").write_text("name: Demo\nmachine_name: demo\n")
+        for name in ("rivers", "glaciers"):
+            (docs / f"{name}.md").write_text(f"# {name.title()}\n\n" + f"A page about {name} and the valleys they shape. " * 3)
+        (work / "sub").mkdir()
+
+        def ingest(cwd, clients_dir):
+            monkeypatch.chdir(cwd)
+            out = self._run("ingest", ["--client", "demo", "--json", "--no-code", "--clients-dir", clients_dir],
+                            capsys, monkeypatch)
+            set_clients_dir(None)
+            return json.loads(out)
+
+        first = ingest(work, str(work / "projects"))
+        assert first["new"] == 2 and first["failed"] == 0, first
+        for cwd, form in ((work, "projects"), (work, "./projects"), (work / "sub", "../projects"),
+                          (work / "sub", str(work / "projects"))):
+            again = ingest(cwd, form)
+            assert (again["new"], again["changed"], again["deleted"], again["unchanged"]) == (0, 0, 0, 2), (form, again)
+            assert again["chunks_added"] == 0, (form, again)
+
     def test_resolved_folder_is_absolute(self, tmp_path, monkeypatch):
         from core.client import CLIENTS_DIR_ENV, resolve_clients_dir, set_clients_dir
 

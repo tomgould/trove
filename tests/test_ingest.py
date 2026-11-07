@@ -528,6 +528,8 @@ class TestContextualEmbeddingsIntegration:
 
 
 class TestRecursiveChunking:
+    """Tests for 9.2: Recursive chunking strategy."""
+
     def test_overlap_never_cuts_the_end_of_a_chunk(self):
         """Regression: the overlap pushed the last chunk past max_chars and its end was cut off."""
         from core.chunking import chunk_by_recursive
@@ -588,12 +590,24 @@ class TestRecursiveChunking:
             first = chunk.split()[0].strip(".")
             assert first in vocabulary, chunk[:40]
 
-    def test_overlap_is_dropped_when_no_whole_word_fits(self):
-        """A previous chunk ending in one long word gives no overlap rather than a fragment."""
+    def test_overlap_without_whitespace_keeps_the_raw_characters(self):
+        """Text written without spaces still gets its overlap: the raw characters are kept."""
         from core.chunking import _apply_overlap
 
-        result = _apply_overlap(["start " + "y" * 80, "next chunk"], overlap=20)
-        assert result == ["start " + "y" * 80, "next chunk"]
+        cjk = "\u6f22\u5b57\u3092\u4f7f\u3046\u6587\u66f8" * 10  # Chinese and Japanese characters, no spaces
+        assert _apply_overlap([cjk, "x"], overlap=20) == [cjk, cjk[-20:] + " x"]
+
+    def test_overlap_inside_a_long_url_keeps_the_raw_characters(self):
+        from core.chunking import _apply_overlap
+
+        prev = "See https://docs.example.com/" + "segment/" * 10
+        assert _apply_overlap([prev, "next chunk"], overlap=20) == [prev, prev[-20:] + " next chunk"]
+
+    def test_overlap_in_ordinary_text_starts_at_a_whole_word(self):
+        from core.chunking import _apply_overlap
+
+        prev = "the quick brown fox jumps over"
+        assert _apply_overlap([prev, "next"], overlap=12) == [prev, "jumps over next"]
 
     def test_semantic_hard_split_keeps_words_whole(self):
         """Regression: a group longer than max_chars was cut at a fixed character count, mid-word."""
@@ -613,8 +627,6 @@ class TestRecursiveChunking:
         for chunk in chunks:
             assert len(chunk) <= 150
             assert set(chunk.split()) <= vocabulary, chunk
-
-    """Tests for 9.2: Recursive chunking strategy."""
 
     def test_chunking_config_has_separators(self):
         """ChunkingConfig includes separators field."""

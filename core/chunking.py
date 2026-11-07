@@ -248,11 +248,19 @@ def _recursive_split(
     return chunks
 
 
+# A run of non-whitespace longer than this is not treated as one word (see _word_tail).
+LONG_TOKEN_CHARS = 30
+
+
 def _word_tail(text: str, room: int) -> str:
-    """The last ``room`` characters of ``text``, starting on a word boundary.
+    """The last ``room`` characters of ``text``, starting on a word boundary when it has one.
 
     When the cut would land inside a word, the partial word is dropped, so the
-    tail starts at the next whole word (or is empty if there is none).
+    tail starts at the next whole word, or is empty when no whole word fits.
+    When the cut lands inside a run of more than LONG_TOKEN_CHARS characters
+    with no whitespace (text written without spaces, such as Chinese or
+    Japanese, or one long token such as a URL), the raw characters are kept,
+    since there is no word boundary to start on.
     """
     if room <= 0:
         return ""
@@ -261,7 +269,16 @@ def _word_tail(text: str, room: int) -> str:
     tail = text[-room:]
     if not text[-room - 1].isspace() and not tail[0].isspace():
         space = re.search(r"\s", tail)
-        tail = tail[space.end():] if space else ""
+        if space:
+            tail = tail[space.end():]
+        else:
+            run = len(tail)
+            i = len(text) - room - 1
+            while i >= 0 and not text[i].isspace() and run <= LONG_TOKEN_CHARS:
+                run += 1
+                i -= 1
+            if run <= LONG_TOKEN_CHARS:
+                tail = ""  # an ordinary word: leave it out rather than start mid-word
     return tail.strip()
 
 
@@ -287,7 +304,8 @@ def _apply_overlap(chunks: list[str], overlap: int, max_chars: int = 0) -> list[
     """Apply character overlap between consecutive chunks.
 
     The end of the previous chunk is put in front of each chunk, starting on
-    a word boundary (a partial word at the start of the overlap is dropped).
+    a word boundary (a partial word at the start of the overlap is dropped)
+    unless the overlap holds no whitespace, in which case it is kept as is.
     With ``max_chars`` > 0 the overlap shrinks (to nothing if need be) so the
     chunk stays within the limit; the chunk's own text is never cut, so no
     text is lost.

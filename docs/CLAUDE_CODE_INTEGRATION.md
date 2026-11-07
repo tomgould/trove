@@ -17,26 +17,14 @@ The Trove MCP server exposes your indexed documents to Claude Code. Once configu
 
 ### Global Configuration (all projects)
 
-Add the Trove MCP server to your global Claude Code settings:
+Add the Trove MCP server for every project with the Claude Code CLI, at user scope:
 
-**File: `~/.mcp.json`**
-
-```json
-{
-  "mcpServers": {
-    "trove": {
-      "command": "python",
-      "args": ["/path/to/trove/scripts/mcp_server.py"],
-      "env": {
-        "TROVE_DEFAULT_CLIENT": "your_default_client",
-        "TROVE_CACHE_SIZE": "3"
-      }
-    }
-  }
-}
+```bash
+claude mcp add --scope user --env TROVE_DEFAULT_CLIENT=your_default_client \
+    trove -- python /path/to/trove/scripts/mcp_server.py
 ```
 
-See `docs/mcp.json.example` for a template.
+Add `--env TROVE_CLIENTS_DIR=/path/to/clients` when your clients live outside the Trove checkout. `docs/mcp.json.example` and `mcp.json.example` are templates for the JSON form below.
 
 ### Project-Specific Configuration
 
@@ -66,7 +54,8 @@ This sets a default client for that project, so `trove_search` works without spe
 |----------|---------|-------------|
 | `TROVE_DEFAULT_CLIENT` | (none) | Client to auto-load on startup |
 | `TROVE_CACHE_SIZE` | `3` | Max number of searchers to keep cached |
-| `ANTHROPIC_API_KEY` | (none) | Required if using Claude provider for summarization |
+| `TROVE_CLIENTS_DIR` | the checkout's `clients/` (or `./clients` for an installed copy) | Folder that holds the client folders. Read once at start-up; the MCP server has no `--clients-dir` flag |
+| `ANTHROPIC_API_KEY` | (none) | Needed when a client's `llm.provider` is `claude` |
 
 ## Step 2: Available MCP Tools
 
@@ -74,8 +63,8 @@ This sets a default client for that project, so `trove_search` works without spe
 
 | Tool | Parameters | Description |
 |------|------------|-------------|
-| `trove_list_clients` | — | List all indexed documentation clients |
-| `trove_get_client` | — | Get info about currently loaded client |
+| `trove_list_clients` | none | List all indexed documentation clients |
+| `trove_get_client` | none | Get info about currently loaded client |
 | `trove_load_client` | `client_name` | Load a specific client |
 
 ### Search Tools
@@ -94,7 +83,7 @@ This sets a default client for that project, so `trove_search` works without spe
 | `trove_search_code` | `query`, `languages?`, `symbol_types?`, `top_k?` | Search code chunks only |
 | `trove_search_repo` | `repo_name`, `query`, `chunk_types?`, `top_k?` | Search within a specific repo |
 | `trove_find_symbol` | `symbol_name`, `symbol_type?`, `language?` | Find a symbol by exact name |
-| `trove_list_repos` | — | List detected repositories |
+| `trove_list_repos` | none | List detected repositories |
 
 ### Ingestion Tools
 
@@ -110,10 +99,10 @@ This sets a default client for that project, so `trove_search` works without spe
 | Tool | Parameters | Description |
 |------|------------|-------------|
 | `trove_graph_stats` | `client_name?` | Get entity/relationship counts, top entities, density |
-| `trove_graph_export` | `client_name?`, `format?`, `max_nodes?` | Export graph as D3.js-compatible JSON |
+| `trove_graph_export` | `client_name?`, `max_nodes?` | Export graph as D3.js-compatible JSON |
 | `trove_search_entities` | `query`, `entity_type?`, `top_k?`, `client_name?` | Search knowledge graph entities by name |
 | `trove_search_relationships` | `entity_name`, `relationship_type?`, `max_hops?`, `client_name?` | Traverse relationships from an entity |
-| `trove_build_graph` | `client_name`, `rebuild?`, `sample?` | Build/rebuild knowledge graph (background) |
+| `trove_build_graph` | `client_name`, `rebuild?`, `sample?`, `workers?` | Build/rebuild knowledge graph (background) |
 
 ### Prompt Discovery Tools
 
@@ -135,7 +124,7 @@ The `mode` parameter is available on `trove_search`, `trove_search_client`, and 
 |------|----------|----------|
 | `precise` | High BM25 weight (0.7), strict scoring, top 10 | Exact terms, names, IDs |
 | `broad` | High vector weight (0.7), no min score, top 30 | Conceptual or exploratory queries |
-| `code_first` | Boost code chunks, cross-reference code | Implementation questions |
+| `code_first` | Code chunks only, with code priority and code cross-referencing | Implementation questions |
 | `exhaustive` | RRF merge, no adaptive rerank, top 50 | Thorough coverage |
 | `diverse` | MMR diversity reranking (lambda=0.7) | Reducing redundant results |
 | `graph_local` | Entity-focused graph search | Finding entity source chunks |
@@ -153,15 +142,19 @@ The `max_tokens` parameter limits how much content is returned. Results are trim
 
 ## Step 3: Create Skills
 
-Skills are markdown files that tell Claude how to handle specific tasks. Place them in `~/.claude/skills/` for global access or `your-project/.claude/skills/` for project-specific use.
+Skills are Markdown files that tell Claude how to handle specific tasks. Claude Code reads each skill from its own folder, as `SKILL.md`: `~/.claude/skills/<name>/SKILL.md` for every project or `your-project/.claude/skills/<name>/SKILL.md` for one project.
 
 ### Generic Trove Skills
 
 Copy the example skills from `docs/skills/` in the Trove repo:
 
 ```bash
-# Copy generic skills to global location
-cp /path/to/trove/docs/skills/trove-*.md ~/.claude/skills/
+# Install the generic skills for every project, one folder per skill
+for f in /path/to/trove/docs/skills/trove-*.md; do
+    name=$(basename "$f" .md)
+    mkdir -p ~/.claude/skills/"$name"
+    cp "$f" ~/.claude/skills/"$name"/SKILL.md
+done
 ```
 
 Available example skills:
@@ -178,7 +171,7 @@ Available example skills:
 
 Create your own skill for a specific project:
 
-**File: `your-project/.claude/skills/api-docs.md`**
+**File: `your-project/.claude/skills/api-docs/SKILL.md`**
 
 ```markdown
 ---
@@ -267,7 +260,7 @@ python scripts/ingest.py --client twilio_api --rebuild
 
 ### 4. Create Project Skill
 
-**File: `~/projects/my-twilio-app/.claude/skills/twilio-docs.md`**
+**File: `~/projects/my-twilio-app/.claude/skills/twilio-docs/SKILL.md`**
 
 ```markdown
 ---
@@ -321,11 +314,11 @@ claude
 
 5. **Cross-Client Search**: Use `trove_search_multi` when a question spans multiple projects instead of searching each client manually.
 
-6. **Cache Benefits**: The searcher cache (default size 3) means switching between recently used clients is instant — no reload penalty.
+6. **Cache Benefits**: The searcher cache (default size 3) keeps recently used clients loaded, so switching between them does not reload the index.
 
-7. **Update Regularly**: Re-run ingestion when documentation updates:
+7. **Update Regularly**: Re-run ingestion when documentation updates. The default run is incremental and only embeds new and changed files:
    ```bash
-   python scripts/ingest.py --client your_api --rebuild
+   python scripts/ingest.py --client your_api
    ```
 
 ## Troubleshooting
@@ -334,11 +327,11 @@ claude
 
 **No results**: Check that:
 - The client exists (`trove_list_clients`)
-- Documents were ingested (`python scripts/ingest.py --client X --rebuild`)
-- Your query matches document content — try `mode="broad"` for wider matching
+- Documents were ingested (`python scripts/ingest.py --client X`)
+- Your query matches document content; try `mode="broad"` for wider matching
 
 **Wrong client**: Use `trove_get_client` to see what's currently loaded, or always use `trove_search_client` with explicit client name.
 
 **Slow client switching**: Increase `TROVE_CACHE_SIZE` in your `.mcp.json` env if you frequently switch between more than 3 clients.
 
-**Summarization returns truncated text**: The `trove_summarize` tool needs LM Studio running for intelligent summaries. Without it, it falls back to showing the first 200 characters.
+**Summarization returns truncated text**: `trove_summarize` asks the client's LLM provider (LM Studio by default) for each summary. When no provider is available or the call fails, it shows the first 200 characters of each result instead.

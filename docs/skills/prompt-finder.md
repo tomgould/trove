@@ -11,7 +11,7 @@ Find the best prompt template for: **{task_description}**
 
 ## Instructions
 
-1. **Combined search** — search both local index and live API:
+1. **Combined search**: search both local index and live API:
    ```
    trove_prompts_find(query="{task_description}", top_k=10)
    ```

@@ -6,7 +6,7 @@ user-invocable: true
 # Trove Documentation Search
 
 <skill-content>
-You have access to a local RAG (Retrieval-Augmented Generation) system via the Trove MCP server. This system hosts documentation across multiple project clients — not just one. Always check which clients are available before searching.
+You have access to a local RAG (Retrieval-Augmented Generation) system via the Trove MCP server. This system hosts documentation across multiple project clients, not just one. Always check which clients are available before searching.
 
 ## Discovering Available Clients
 
@@ -16,7 +16,7 @@ Before searching, list the available Trove clients to see what documentation is 
 trove_list_clients()
 ```
 
-This will return all installed clients (e.g. myproject, infrastructure, platform, etc.). Use the correct `client_name` for your searches.
+This returns all installed clients (e.g. myproject, infrastructure, platform, etc.). Use the correct `client_name` for your searches.
 
 ## How to Search
 
@@ -42,15 +42,15 @@ trove_search_client(
 ```
 
 Available modes:
-- **`precise`** — High keyword weight, strict scoring, top 10. Best for exact terms, names, IDs.
-- **`broad`** — High semantic weight, no min score, top 30. Best for conceptual or exploratory queries.
-- **`code_first`** — Boost code chunks, cross-reference code with docs. Best for implementation questions.
-- **`exhaustive`** — RRF merge, deep reranking, top 50. Best when you need thorough coverage.
-- **`diverse`** — MMR diversity to reduce redundancy. Best when results seem repetitive.
-- **`graph_local`** — Entity-focused graph search. Best for finding chunks about specific entities.
-- **`graph_global`** — Relationship traversal. Best for multi-hop reasoning across entities.
-- **`graph_hybrid`** — Local + global graph combined. Best for comprehensive graph coverage.
-- **`graph_mix`** — Graph + standard hybrid merged via RRF. Best overall graph-augmented search.
+- **`precise`**: High keyword weight, strict scoring, top 10. Best for exact terms, names, IDs.
+- **`broad`**: High semantic weight, no min score, top 30. Best for conceptual or exploratory queries.
+- **`code_first`**: Code chunks only, with code priority and code cross-referencing. Best for implementation questions.
+- **`exhaustive`**: RRF merge, deep reranking, top 50. Best when you need thorough coverage.
+- **`diverse`**: MMR diversity to reduce redundancy. Best when results seem repetitive.
+- **`graph_local`**: Entity-focused graph search. Best for finding chunks about specific entities.
+- **`graph_global`**: Relationship traversal. Best for multi-hop reasoning across entities.
+- **`graph_hybrid`**: Local + global graph combined. Best for comprehensive graph coverage.
+- **`graph_mix`**: Graph + standard hybrid merged via RRF. Best overall graph-augmented search.
 
 Note: Graph modes (`graph_*`) require a knowledge graph to be built for the client. Use `trove_graph_stats` to check, or `trove_build_graph` to build one.
 
@@ -167,10 +167,10 @@ Search Trove when the user asks about:
 
 When answering based on search results:
 
-1. **Cite the source** — Mention which client and document the information comes from
-2. **Include code examples** — If the docs contain code, include relevant snippets
-3. **Note differences** — If results show varying approaches, highlight the distinctions
-4. **Link related concepts** — Connect related topics the user may want to explore next
+1. **Cite the source**: Mention which client and document the information comes from
+2. **Include code examples**: If the docs contain code, include relevant snippets
+3. **Note differences**: If results show varying approaches, highlight the distinctions
+4. **Link related concepts**: Connect related topics the user may want to explore next
 
 ## Multi-Query Approach
 

@@ -131,7 +131,7 @@ def limit_per_page(chunks: list[dict], max_per_page: int | None, known_urls=froz
 
 
 def _light_stem(word: str) -> str:
-    """Drop a plural ending so "grapes" matches "grape" and "allergies" matches "allergy"."""
+    """Drop a plural ending so "cables" matches "cable" and "batteries" matches "battery"."""
     if len(word) <= 3:
         return word
     if word.endswith("ies"):

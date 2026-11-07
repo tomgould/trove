@@ -36,6 +36,7 @@ FRONTMATTER_FIELDS = {
     "page_type": "page_type",
     "scraped_at": "scraped_at",
     "content_hash": "page_content_hash",
+    "canonical_url": "canonical_url",
 }
 
 SECTION_SEPARATOR = " > "
@@ -139,13 +140,13 @@ def clean_title(title: str | None) -> str | None:
 def frontmatter_metadata(frontmatter: dict) -> dict:
     """The known frontmatter fields, renamed and coerced for chunk metadata.
 
-    ``title`` and ``url`` are always strings (see ``_text_value``), and the
-    title is cut to MAX_TITLE_CHARS characters.
+    ``title``, ``url`` and ``canonical_url`` are always strings (see
+    ``_text_value``), and the title is cut to MAX_TITLE_CHARS characters.
     """
     meta = {}
     for key, meta_key in FRONTMATTER_FIELDS.items():
         value = frontmatter.get(key)
-        if key in ("title", "url"):
+        if key in ("title", "url", "canonical_url"):
             value = _text_value(value)
             if key == "title":
                 value = clean_title(value)

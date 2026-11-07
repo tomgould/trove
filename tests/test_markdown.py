@@ -61,6 +61,14 @@ class TestFrontmatter:
         meta = frontmatter_metadata({"tags": 1, "date": datetime.datetime(2026, 1, 2, 3, 4), "domain": ["a", "b"]})
         assert meta == {"date": "2026-01-02T03:04:00", "domain": "a, b"}
 
+    def test_canonical_url_becomes_metadata(self):
+        """canonical_url is kept so a print copy can be grouped with its page in results."""
+        from core.markdown import frontmatter_metadata
+
+        meta = frontmatter_metadata({"url": "https://example.com/a/print/1", "canonical_url": " https://example.com/a/ "})
+        assert meta == {"url": "https://example.com/a/print/1", "canonical_url": "https://example.com/a/"}
+        assert "canonical_url" not in frontmatter_metadata({"canonical_url": ["x", "y"]})
+
     def test_numeric_title_and_url_become_strings(self):
         from core.markdown import frontmatter_metadata
 

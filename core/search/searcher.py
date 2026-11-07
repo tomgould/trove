@@ -57,6 +57,47 @@ def citation(chunk: dict) -> dict:
     }
 
 
+def _norm_url(url) -> str:
+    """A URL without its fragment and trailing slash, for comparing pages."""
+    if not isinstance(url, str):
+        return ""
+    return url.strip().split("#", 1)[0].rstrip("/")
+
+
+def page_key(chunk: dict, known_urls: set[str] | frozenset[str] = frozenset()) -> str:
+    """The page a chunk belongs to, used to limit chunks per page in results.
+
+    A chunk's page is its ``url`` (or its source file when it has no URL). A
+    copy of another page, such as a print version, is grouped with that page
+    when its ``canonical_url`` is the ``url`` of another indexed file
+    (``known_urls`` holds the normalised URLs of the indexed chunks).
+    """
+    metadata = chunk.get("metadata") or {}
+    url = _norm_url(metadata.get("url") or metadata.get("source_url"))
+    canonical = _norm_url(metadata.get("canonical_url"))
+    if canonical and canonical != url and canonical in known_urls:
+        return canonical
+    return url or chunk_source(chunk)
+
+
+def limit_per_page(chunks: list[dict], max_per_page: int | None, known_urls=frozenset()) -> list[dict]:
+    """Move chunks past the first ``max_per_page`` of each page to the end of the list.
+
+    Nothing is dropped and the order within each group is kept, so when one
+    page holds all the relevant chunks they still come back, after the other
+    pages' best chunks. ``None`` or 0 leaves the list as it is.
+    """
+    if not max_per_page or max_per_page <= 0:
+        return chunks
+    counts: dict[str, int] = {}
+    kept, moved = [], []
+    for chunk in chunks:
+        key = page_key(chunk, known_urls)
+        counts[key] = counts.get(key, 0) + 1
+        (kept if counts[key] <= max_per_page else moved).append(chunk)
+    return kept + moved
+
+
 def filter_by_source(chunks: list[dict], source_filter) -> list[dict]:
     """Keep only chunks whose source file is in ``source_filter``."""
     allowed = set(source_filter)
@@ -122,6 +163,8 @@ class HybridSearcher:
         cache_max_size: int = 128,
         # Skip BM25 load during ingestion (rebuilt at end anyway)
         skip_bm25_load: bool = False,
+        # Result diversity: at most this many chunks per page before other pages
+        max_chunks_per_source: int | None = 2,
     ):
         """
         Initialize the hybrid searcher.
@@ -184,6 +227,10 @@ class HybridSearcher:
 
         # Search result cache
         self._cache = SearchCache(max_size=cache_max_size, ttl=cache_ttl)
+
+        # Result diversity (see limit_per_page)
+        self.max_chunks_per_source = max_chunks_per_source
+        self._known_urls: frozenset[str] | None = None
 
         # Search quality tracking
         self._last_search_quality = None
@@ -397,6 +444,7 @@ class HybridSearcher:
             self.bm25_index = BM25Okapi(tokenized_corpus, k1=self.bm25_k1, b=self.bm25_b)
             self._bm25_tokenized_corpus = tokenized_corpus
             self.bm25_chunks = cache_data["bm25_chunks"]
+            self._known_urls = None
 
             logger.info(f"Loaded BM25 index from cache ({len(self.bm25_chunks)} documents)")
             return True
@@ -617,6 +665,7 @@ class HybridSearcher:
         # Invalidate search cache — index contents are changing
         self._cache.clear()
         self._last_corpus_hash = None
+        self._known_urls = None
 
         # Get all documents from ChromaDB
         results = self.collection.get(include=["documents", "metadatas"])
@@ -1230,6 +1279,7 @@ class HybridSearcher:
             str(sorted(symbol_types) if symbol_types else None),
             str(sorted(repos) if repos else None),
             str(rerank_top_n),
+            str(self.max_chunks_per_source),
         ]
         config_hash = hashlib.md5("|".join(config_parts).encode()).hexdigest()[:8]
         return f"{query}|{top_k}|{min_score}|{config_hash}"
@@ -1432,6 +1482,10 @@ class HybridSearcher:
         if prioritize_data and reranked:
             reranked = self.prioritize_data_chunks(reranked)
 
+        # Step 7: at most max_chunks_per_source chunks per page ahead of other pages
+        if self.max_chunks_per_source and reranked:
+            reranked = limit_per_page(reranked, self.max_chunks_per_source, self._page_urls())
+
         # Return top K
         result = reranked[:top_k]
 
@@ -1464,6 +1518,14 @@ class HybridSearcher:
         self._cache.put(cache_key, (result, self._last_search_quality))
 
         return result
+
+    def _page_urls(self) -> frozenset[str]:
+        """Normalised URLs of the indexed chunks, used by page_key."""
+        if self._known_urls is None:
+            self._known_urls = frozenset(
+                u for u in (_norm_url((c.get("metadata") or {}).get("url")) for c in self.bm25_chunks) if u
+            )
+        return self._known_urls
 
     def _compute_quality(
         self,

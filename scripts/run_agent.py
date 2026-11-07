@@ -57,6 +57,7 @@ def create_searcher(client):
         code_priority_boost=search_config.get("code_priority_boost", 0.5),
         cross_reference_code=search_config.get("cross_reference_code", False),
         cross_reference_top_k=search_config.get("cross_reference_top_k", 3),
+        max_chunks_per_source=search_config.get("max_chunks_per_source", 2),
         reranker_backend=search_config.get("reranker", "local"),
         reranker_endpoint=search_config.get("reranker_endpoint"),
         bm25_k1=search_config.get("bm25_k1", 1.5),

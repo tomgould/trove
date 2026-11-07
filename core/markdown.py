@@ -40,8 +40,8 @@ FRONTMATTER_FIELDS = {
 
 SECTION_SEPARATOR = " > "
 
-# A section shorter than this is merged into the chunk before it, so a short
-# headed section ("## Install" plus one line) is not dropped as a too-short chunk.
+# A section shorter than this is merged into a neighbouring chunk (the one
+# before it, or else the one after it), so it does not end up as a tiny chunk.
 MIN_SECTION_CHARS = 80
 
 # The stored page title is cut to this length; it is copied into every chunk.
@@ -264,15 +264,6 @@ def split_sections(text: str, title: str | None = None) -> list[tuple[list[str],
     return [(p, "\n".join(body).strip()) for p, body in sections]
 
 
-def _common_prefix(a: list[str], b: list[str]) -> list[str]:
-    out = []
-    for x, y in zip(a, b):
-        if x != y:
-            break
-        out.append(x)
-    return out
-
-
 def chunk_markdown(
     text: str,
     title: str | None = None,
@@ -283,8 +274,14 @@ def chunk_markdown(
 
     Each chunk is (content, section) where section is the heading path joined
     with " > ". Long sections are split further with the recursive splitter and
-    keep their section; a short section is merged into the chunk before it when
-    both fit in ``max_chars``, and the merged chunk gets the headings they share.
+    keep their section.
+
+    A section shorter than MIN_SECTION_CHARS is merged into the chunk before it
+    when both fit in ``max_chars``; otherwise it is carried into the chunk after
+    it, and if that does not fit either it stays a chunk of its own. No text is
+    dropped. A chunk built from several sections takes the heading path of the
+    section that contributed the most text (the first of them on a tie), and
+    the merged sections' own headings stay in the chunk text.
     """
     from core.chunking import chunk_by_recursive
 
@@ -296,16 +293,51 @@ def chunk_markdown(
             for part in chunk_by_recursive(body, max_chars=max_chars, overlap=overlap):
                 pieces.append((path, part))
 
-    merged: list[tuple[list[str], str]] = []
-    for path, body in pieces:
-        if merged:
-            prev_path, prev_body = merged[-1]
-            if len(body) < MIN_SECTION_CHARS and len(prev_body) + len(body) + 2 <= max_chars:
-                merged[-1] = (_common_prefix(prev_path, path) or prev_path[:1], prev_body + "\n\n" + body)
-                continue
-        merged.append((path, body))
+    # Each chunk is (list of (path, text) it was built from); joined at the end.
+    chunks: list[list[tuple[list[str], str]]] = []
+    pending: list[tuple[list[str], str]] = []  # short pieces waiting for the next chunk
 
-    return [(body, SECTION_SEPARATOR.join(path)) for path, body in merged if body.strip()]
+    def size(parts: list[tuple[list[str], str]]) -> int:
+        return sum(len(body) for _, body in parts) + 2 * (len(parts) - 1)
+
+    for path, body in pieces:
+        if not body.strip():
+            continue
+        piece = [(path, body)]
+        if len(body) < MIN_SECTION_CHARS:
+            if pending:
+                if size(pending + piece) <= max_chars:
+                    pending += piece
+                else:
+                    chunks.append(pending)
+                    pending = piece
+            elif chunks and size(chunks[-1] + piece) <= max_chars:
+                chunks[-1] += piece
+            else:
+                pending = piece
+            continue
+        if pending:
+            if size(pending + piece) <= max_chars:
+                piece = pending + piece
+            else:
+                chunks.append(pending)
+            pending = []
+        chunks.append(piece)
+
+    if pending:
+        if chunks and size(chunks[-1] + pending) <= max_chars:
+            chunks[-1] += pending
+        else:
+            chunks.append(pending)
+
+    result = []
+    for parts in chunks:
+        weight: dict[tuple[str, ...], int] = {}
+        for path, body in parts:
+            weight[tuple(path)] = weight.get(tuple(path), 0) + len(body)
+        section = max(weight, key=weight.get)  # first wins on a tie
+        result.append(("\n\n".join(body for _, body in parts), SECTION_SEPARATOR.join(section)))
+    return result
 
 
 def first_heading(text: str) -> str | None:

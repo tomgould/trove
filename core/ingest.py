@@ -353,7 +353,9 @@ class DocumentIngestor:
             }))
         return self._build_chunks(items, source_id)
 
-    def _build_chunks(self, items: list[tuple[str, dict]], source_id: str = "") -> list[dict]:
+    def _build_chunks(
+        self, items: list[tuple[str, dict]], source_id: str = "", min_chars: int = MIN_CHUNK_CHARS,
+    ) -> list[dict]:
         """Validate, de-duplicate and give IDs to (content, metadata) pairs."""
         result = []
         seen_hashes: set[str] = set()
@@ -361,7 +363,7 @@ class DocumentIngestor:
 
         for i, (content, extra_meta) in enumerate(items):
             # Validate chunk quality
-            is_valid, skip_reason = validate_chunk(content)
+            is_valid, skip_reason = validate_chunk(content, min_chars=min_chars)
             if not is_valid:
                 skip_stats[skip_reason] = skip_stats.get(skip_reason, 0) + 1
                 continue
@@ -429,7 +431,9 @@ class DocumentIngestor:
             (content, {"element_type": "MarkdownSection", "section": section, **page_meta})
             for content, section in pieces
         ]
-        chunks = self._build_chunks(items, source_id=str(path))
+        # chunk_markdown already merges short sections where it can; a short
+        # section left on its own is kept, not dropped as too short.
+        chunks = self._build_chunks(items, source_id=str(path), min_chars=1)
         logger.info(f"Created {len(chunks)} chunks from {path.name}")
         return chunks
 

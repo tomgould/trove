@@ -230,6 +230,117 @@ class TestFences:
         assert first_heading("````\n```\n# no\n") is None
 
 
+LONG = "word " * 296
+
+
+class TestShortSections:
+    """No non-empty text may be lost, and a chunk keeps a precise breadcrumb."""
+
+    @staticmethod
+    def _find(chunks, needle):
+        hits = [(content, section) for content, section in chunks if needle in content]
+        assert hits, f"{needle!r} is in no chunk: {chunks}"
+        return hits[0]
+
+    def test_short_last_section_that_cannot_merge_survives(self, ingestor, tmp_path):
+        from core.markdown import chunk_markdown
+
+        text = "# T\n## Install\n" + LONG + "\n## Contact\nEmail sales@example.com"
+        content, section = self._find(chunk_markdown(text, title="T"), "sales@example.com")
+        assert section == "T > Contact"
+        assert "## Contact" in content
+        page = tmp_path / "t.md"
+        page.write_text(text)
+        assert any("sales@example.com" in c["content"] for c in ingestor.chunk_file(page))
+
+    def test_short_middle_section_survives(self, ingestor, tmp_path):
+        from core.markdown import chunk_markdown
+
+        text = "# T\n## Install\n" + LONG + "\n## Contact\nEmail sales@example.com\n## Usage\n" + "word " * 200
+        chunks = chunk_markdown(text, title="T")
+        content, section = self._find(chunks, "sales@example.com")
+        assert section == "T > Usage"  # carried into the next section, which holds most of the text
+        assert content.index("## Contact") < content.index("## Usage")
+        page = tmp_path / "t.md"
+        page.write_text(text)
+        assert any("sales@example.com" in c["content"] for c in ingestor.chunk_file(page))
+
+    def test_short_first_section_survives(self, ingestor, tmp_path):
+        from core.markdown import chunk_markdown
+
+        text = "# T\n## Intro\nHello there.\n## Install\n" + "word " * 200
+        chunks = chunk_markdown(text, title="T")
+        content, section = self._find(chunks, "Hello there.")
+        assert section == "T > Install"
+        assert "## Intro" in content
+        page = tmp_path / "t.md"
+        page.write_text(text)
+        assert any("Hello there." in c["content"] for c in ingestor.chunk_file(page))
+
+    def test_consecutive_short_sections_all_survive(self, ingestor, tmp_path):
+        from core.markdown import chunk_markdown
+
+        text = ("# T\n## Install\n" + LONG + "\n## Phone\nCall 0100.\n## Fax\nNone.\n## Post\nPO Box 1."
+                "\n## Usage\n" + LONG + "\n## Email\nhi@example.com\n## Web\nexample.com")
+        chunks = chunk_markdown(text, title="T")
+        for needle in ("Call 0100.", "None.", "PO Box 1.", "hi@example.com", "## Web"):
+            self._find(chunks, needle)
+        page = tmp_path / "t.md"
+        page.write_text(text)
+        joined = "\n".join(c["content"] for c in ingestor.chunk_file(page))
+        for needle in ("Call 0100.", "None.", "PO Box 1.", "hi@example.com", "## Web"):
+            assert needle in joined
+
+    def test_tiny_page_is_still_indexed(self, ingestor, tmp_path):
+        page = tmp_path / "t.md"
+        page.write_text("# Hours\nOpen 9 to 5.")
+        chunks = ingestor.chunk_file(page)
+        assert [c["metadata"]["section"] for c in chunks] == ["Hours"]
+
+    def test_short_section_found_by_search(self, clients_dir, make_client, capsys, monkeypatch):
+        import json
+        import sys
+
+        import scripts.ingest as ingest_cli
+        import scripts.search as search_cli
+
+        name = make_client("contact")
+        docs = clients_dir / name / "documents"
+        docs.mkdir()
+        (docs / "t.md").write_text("# T\n## Install\n" + LONG + "\n## Contact\nEmail sales@example.com")
+        monkeypatch.setattr(sys, "argv", ["ingest", "--clients-dir", str(clients_dir), "--client", name,
+                                          "--json", "--no-code"])
+        ingest_cli.main()
+        capsys.readouterr()
+        monkeypatch.setenv("TROVE_CLIENTS_DIR", str(clients_dir))
+        monkeypatch.setattr(sys, "argv", ["search", "--client", name, "--json", "--full", "sales email contact"])
+        search_cli.main()
+        results = json.loads(capsys.readouterr().out)["results"]
+        assert any("sales@example.com" in r["content"] for r in results), results
+
+
+class TestMergedBreadcrumb:
+    def test_merged_chunk_keeps_the_long_sections_heading(self):
+        from core.markdown import chunk_markdown
+
+        text = "# T\n## Install\n" + "Install it like this. " * 20 + "\n## Usage\nRun it now."
+        chunks = chunk_markdown(text, title="T")
+        assert len(chunks) == 1
+        content, section = chunks[0]
+        assert section == "T > Install"
+        assert "## Usage" in content and "Run it now." in content
+
+    def test_short_first_section_merged_forward_takes_the_long_sections_heading(self):
+        from core.markdown import chunk_markdown
+
+        text = "# T\n## Intro\nHello there.\n## Install\n" + "Install it like this. " * 20
+        chunks = chunk_markdown(text, title="T")
+        assert len(chunks) == 1
+        content, section = chunks[0]
+        assert section == "T > Install"
+        assert content.startswith("# T\n\n## Intro")
+
+
 @pytest.fixture(scope="module")
 def ingestor():
     from core.ingest import DocumentIngestor

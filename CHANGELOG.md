@@ -4,6 +4,41 @@ Completed stages from the Trove roadmap. Each stage was independently valuable a
 
 ---
 
+## Phase 2: use it as a building block (unreleased)
+
+Trove can now be the search half of a scrape pipeline: clients outside the repository, Markdown with frontmatter, citations in results, and ingest runs a scheduler can act on.
+
+### Clients
+- `TROVE_CLIENTS_DIR` and `--clients-dir` (on every script) choose the clients folder. The flag wins over the environment variable, which wins over the default `clients/`. One helper, `core.client.resolve_clients_dir`, decides it everywhere.
+- `discover_clients` lists only folders with a `client.yaml`, and skips names starting with `_` or `.`, so a `_template/` folder is not a client.
+- A client's `paths.documents` may be absolute, start with `~`, or be a symlink.
+- `create_client.py --name X [--description TEXT] [--documents-dir PATH] [--embedding-model M] [--force]` creates a client without the wizard. The wizard still runs with no arguments.
+
+### Markdown
+- `.md` and `.markdown` files are split at their headings instead of going through the generic parser. Each chunk has a `section` field with its heading path ("Page title > H1 > H2").
+- YAML frontmatter fields `title`, `url`, `date`, `domain`, `page_type`, `scraped_at` and `content_hash` (stored as `page_content_hash`) become chunk metadata, and the block is removed from the indexed text. Bad frontmatter is logged and the file is indexed whole.
+- Image syntax is replaced by its alt text, and image-only lines are dropped. `markdown.strip_images: false` in `client.yaml` turns this off.
+- With `embedding.contextualize`, the section is part of the context prefix.
+
+### Search
+- CLI results, `--json` results (new `client`, `title`, `url` and `section` fields; `source` is unchanged) and MCP results show title, URL and section. Generated answers list them in their references.
+- `search.py --clients a,b` and `--all` search several clients and merge the results by rank, each labelled with its client.
+
+### Ingest
+- The manifest keeps a content hash, so files rewritten with identical content are not embedded again.
+- A file that fails is no longer recorded as indexed, so the next run retries it. Parse failures in the pipeline are now counted as failures.
+- `ingest.py --json` prints counts of new, changed, unchanged, deleted and failed files.
+
+### Fixes
+- After `trove_ingest_file` or `trove_ingest_url`, searches in the same MCP session found nothing: storing the cached searcher again closed it.
+
+### Migration
+- No index format change. Existing manifests have no hashes and are compared by modification time and size until the next save.
+- Markdown files are chunked differently, so run `ingest.py --rebuild` once to give existing Markdown chunks their `section`, `title` and `url`.
+- A folder in the clients directory without a `client.yaml` is no longer listed as a client. Add a `client.yaml` to keep it.
+
+---
+
 ## Phase 1: make it healthy (unreleased)
 
 Trove is active again. See [docs/REVIVAL-PLAN.md](docs/REVIVAL-PLAN.md) for the plan and [docs/BASELINE.md](docs/BASELINE.md) for the state it started from.

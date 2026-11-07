@@ -166,8 +166,7 @@ class IngestionPipeline:
             if path.suffix.lower() == ".mbox":
                 chunks = self.ingestor.ingest_mbox_chunks_only(path)
             else:
-                elements = self.ingestor.parse_document(path)
-                chunks = self.ingestor.chunk_elements(elements, source_id=str(path))
+                chunks = self.ingestor.chunk_file(path)
 
             try:
                 rel_path = path.relative_to(base_directory)
@@ -181,6 +180,7 @@ class IngestionPipeline:
             return chunks
         except Exception as e:
             logger.error(f"Failed to parse {path.name}: {e}")
+            self._failed_files.append(str(path))
             return []
 
     def get_indexed_source_paths(self) -> set[str]:

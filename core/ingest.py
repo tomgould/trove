@@ -81,6 +81,10 @@ def build_context_prefix(metadata: dict) -> str:
     if page_number is not None:
         parts.append(f"Page {page_number}.")
 
+    section = metadata.get("section")
+    if section:
+        parts.append(f"Section: {section}.")
+
     if not parts:
         return ""
 
@@ -229,6 +233,7 @@ class DocumentIngestor:
         chunk_max_chars: int = 1500,
         chunk_overlap: int = 100,
         passage_prefix: str = "",
+        markdown_config: dict | None = None,
     ):
         """
         Initialize the document ingestor.
@@ -239,7 +244,11 @@ class DocumentIngestor:
             chunk_overlap: Character overlap between chunks
             passage_prefix: Prefix to add to passages before embedding
                             (e.g., "passage: " for E5 models)
+            markdown_config: Markdown options from client.yaml (``markdown:``),
+                            e.g. {"strip_images": False}. Defaults apply when None.
         """
+        from core.client import DEFAULT_MARKDOWN_CONFIG
+        self.markdown_config = {**DEFAULT_MARKDOWN_CONFIG, **(markdown_config or {})}
         self.chunk_max_chars = chunk_max_chars
         self.chunk_overlap = chunk_overlap
         self.passage_prefix = passage_prefix
@@ -333,13 +342,24 @@ class DocumentIngestor:
                 overlap=self.chunk_overlap,
             )
 
+        items = []
+        for chunk in chunks:
+            element_meta = chunk.metadata.to_dict() if hasattr(chunk, "metadata") and hasattr(chunk.metadata, "to_dict") else {}
+            items.append((str(chunk), {
+                "element_type": type(chunk).__name__,
+                "page_number": element_meta.get("page_number"),
+                "parent_id": element_meta.get("parent_id"),
+                "is_continuation": element_meta.get("is_continuation"),
+            }))
+        return self._build_chunks(items, source_id)
+
+    def _build_chunks(self, items: list[tuple[str, dict]], source_id: str = "") -> list[dict]:
+        """Validate, de-duplicate and give IDs to (content, metadata) pairs."""
         result = []
         seen_hashes: set[str] = set()
         skip_stats: dict[str, int] = {"too_short": 0, "no_alphanumeric": 0, "duplicate": 0}
 
-        for i, chunk in enumerate(chunks):
-            content = str(chunk)
-
+        for i, (content, extra_meta) in enumerate(items):
             # Validate chunk quality
             is_valid, skip_reason = validate_chunk(content)
             if not is_valid:
@@ -357,14 +377,13 @@ class DocumentIngestor:
             hash_input = f"{source_id}:{i}:{content[:100]}"
             chunk_id = hashlib.md5(hash_input.encode()).hexdigest()[:16]
 
-            # Extract Unstructured metadata
-            element_meta = chunk.metadata.to_dict() if hasattr(chunk, "metadata") and hasattr(chunk.metadata, "to_dict") else {}
             metadata = {
-                "element_type": type(chunk).__name__,
+                "element_type": extra_meta.get("element_type"),
                 "chunk_index": i,
-                "page_number": element_meta.get("page_number"),
-                "parent_id": element_meta.get("parent_id"),
-                "is_continuation": element_meta.get("is_continuation"),
+                "page_number": extra_meta.get("page_number"),
+                "parent_id": extra_meta.get("parent_id"),
+                "is_continuation": extra_meta.get("is_continuation"),
+                **{k: v for k, v in extra_meta.items() if k not in ("element_type", "page_number", "parent_id", "is_continuation")},
                 "content_hash": content_hash,
             }
 
@@ -379,6 +398,50 @@ class DocumentIngestor:
             logger.info(f"Skipped {total_skipped} chunks: {skip_stats}")
         logger.info(f"Created {len(result)} chunks")
         return result
+
+    def chunk_markdown_file(self, path: str | Path) -> list[dict]:
+        """Chunk a Markdown file by its headings, with frontmatter as metadata.
+
+        See core.markdown. Bad frontmatter is logged and the whole file is indexed.
+        """
+        from core.markdown import (
+            chunk_markdown, first_heading, frontmatter_metadata, split_frontmatter, strip_images,
+        )
+
+        path = Path(path)
+        text = path.read_text(encoding="utf-8", errors="replace")
+        frontmatter, body = split_frontmatter(text, source=str(path))
+        page_meta = frontmatter_metadata(frontmatter)
+        if self.markdown_config.get("strip_images", True):
+            body = strip_images(body)
+
+        title = page_meta.get("title") or first_heading(body)
+        if title and "title" not in page_meta:
+            page_meta["title"] = title
+
+        pieces = chunk_markdown(
+            body,
+            title=title if isinstance(title, str) else None,
+            max_chars=self.chunk_max_chars,
+            overlap=self.chunk_overlap,
+        )
+        items = [
+            (content, {"element_type": "MarkdownSection", "section": section, **page_meta})
+            for content, section in pieces
+        ]
+        chunks = self._build_chunks(items, source_id=str(path))
+        logger.info(f"Created {len(chunks)} chunks from {path.name}")
+        return chunks
+
+    def chunk_file(self, path: str | Path) -> list[dict]:
+        """Parse and chunk one document. Markdown goes through chunk_markdown_file."""
+        from core.markdown import MARKDOWN_EXTENSIONS
+
+        path = Path(path)
+        if path.suffix.lower() in MARKDOWN_EXTENSIONS:
+            return self.chunk_markdown_file(path)
+        elements = self.parse_document(path)
+        return self.chunk_elements(elements, source_id=str(path))
 
     def create_embeddings(
         self, chunks: list[dict], batch_size: Optional[int] = None,
@@ -492,8 +555,7 @@ class DocumentIngestor:
             Tuple of (chunks, embeddings)
         """
         path = Path(path)
-        elements = self.parse_document(path)
-        chunks = self.chunk_elements(elements, source_id=str(path))
+        chunks = self.chunk_file(path)
 
         # Add source file to metadata (can be overridden by ingest_directory for full path)
         for chunk in chunks:
@@ -747,6 +809,7 @@ def ingest_directory(
     pipeline_searcher=None,
     parse_workers: int = 4,
     contextualize: bool = False,
+    stats_out: Optional[dict] = None,
 ) -> tuple[list[dict], list[list[float]]]:
     """
     Ingest all documents in a directory.
@@ -762,6 +825,8 @@ def ingest_directory(
         pipeline_searcher: When provided, use IngestionPipeline for parallel parse/embed/index
         parse_workers: Number of parallel parse workers for pipeline mode (default 4)
         contextualize: If True, prepend document context to chunks before embedding (pipeline mode)
+        stats_out: If given (pipeline mode), filled with the pipeline stats and the
+            number of files found ("files_found")
 
     Returns:
         Tuple of (all_chunks, all_embeddings)
@@ -845,6 +910,9 @@ def ingest_directory(
         )
         if stats["failed_files"]:
             logger.warning(f"Pipeline failed files: {stats['failed_files']}")
+        if stats_out is not None:
+            stats_out.update(stats)
+            stats_out["files_found"] = len(sorted_files)
 
         return [], []
 
@@ -1167,6 +1235,19 @@ def _manifest_path(client) -> Path:
     return client.index_path / MANIFEST_FILENAME
 
 
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for block in iter(lambda: fh.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _manifest_entry(path: Path) -> dict:
+    stat = path.stat()
+    return {"mtime": stat.st_mtime, "size": stat.st_size, "sha256": _file_sha256(path)}
+
+
 def build_file_manifest(
     directory: Path,
     extensions: tuple,
@@ -1183,7 +1264,9 @@ def build_file_manifest(
         exclude_patterns: Optional glob patterns to exclude (e.g., ["**/clients/**"])
 
     Returns:
-        Dict of {absolute_path: {"mtime": float, "size": int}}
+        Dict of {absolute_path: {"mtime": float, "size": int, "sha256": str}}.
+        The content hash lets an incremental run treat a file that was rewritten
+        with the same content (a scraper re-run) as unchanged.
     """
     import fnmatch
     exclude_patterns = exclude_patterns or []
@@ -1210,11 +1293,7 @@ def build_file_manifest(
                     if _excluded(f):
                         continue
                     try:
-                        stat = f.stat()
-                        manifest[str(f)] = {
-                            "mtime": stat.st_mtime,
-                            "size": stat.st_size,
-                        }
+                        manifest[str(f)] = _manifest_entry(f)
                     except (OSError, FileNotFoundError):
                         continue  # Skip broken symlinks
     else:
@@ -1222,11 +1301,7 @@ def build_file_manifest(
             if f.is_file() and f.suffix.lower() in extensions and not f.name.startswith("."):
                 if _excluded(f):
                     continue
-                stat = f.stat()
-                manifest[str(f)] = {
-                    "mtime": stat.st_mtime,
-                    "size": stat.st_size,
-                }
+                manifest[str(f)] = _manifest_entry(f)
     return manifest
 
 
@@ -1294,9 +1369,14 @@ def diff_file_manifest(
 
     modified_files = []
     for path in sorted(current_set & indexed_set):
-        cur = current_files[path]
-        idx = indexed_files[path]
-        if cur["mtime"] != idx["mtime"] or cur["size"] != idx["size"]:
+        if _entry_changed(current_files[path], indexed_files[path]):
             modified_files.append(path)
 
     return new_files, modified_files, deleted_files
+
+
+def _entry_changed(cur: dict, idx: dict) -> bool:
+    """Compare by content hash when both sides have one, else by mtime and size."""
+    if cur.get("sha256") and idx.get("sha256"):
+        return cur["sha256"] != idx["sha256"]
+    return cur.get("mtime") != idx.get("mtime") or cur.get("size") != idx.get("size")

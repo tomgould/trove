@@ -170,6 +170,17 @@ clients/your_client/
     └── system.txt
 ```
 
+### Without the wizard
+
+Scripts and pipelines can create a client in one command:
+
+```bash
+python scripts/create_client.py --name news-site --description "Scraped news" \
+    --documents-dir /data/scrapes/news-site --embedding-model all-MiniLM-L6-v2
+```
+
+Only `--name` is required. A name is 3 to 64 letters, digits, `_` or `-`, starting and ending with a letter or digit. The command writes a minimal `client.yaml` (everything else uses the defaults), creates `index/` and `prompts/` (and `documents/` unless `--documents-dir` is given), and refuses to overwrite an existing `client.yaml` unless you pass `--force`. With no arguments it starts the wizard.
+
 ### Manual Setup
 
 Alternatively, create a client manually:
@@ -508,7 +519,19 @@ python scripts/ingest.py --client myproject --rebuild --force-bm25-rebuild
 
 # List available clients
 python scripts/ingest.py --list
+
+# Print a JSON summary of what changed (for scripts and schedulers)
+python scripts/ingest.py --client myproject --json
 ```
+
+The default run is incremental. Unchanged files are not parsed or embedded again, including files a scraper rewrote with identical content, because the manifest keeps a hash of each file. A file that fails is reported and retried on the next run. `--json` prints:
+
+```json
+{"client": "myproject", "mode": "incremental", "new": 2, "changed": 1, "unchanged": 40,
+ "deleted": 0, "failed": 0, "failed_files": [], "chunks_added": 9, "chunks_removed": 3}
+```
+
+`mode` is `rebuild` on the first run (or with `--rebuild`), when every file counts as new. With `--all` the summaries are listed under `"clients"`.
 
 ### Search
 
@@ -534,9 +557,15 @@ python scripts/search.py --client myproject --json "your query"
 # Full content (no truncation)
 python scripts/search.py --client myproject --full "your query"
 
+# Search several clients, merged by rank, each result labelled with its client
+python scripts/search.py --clients docs,blog "your query"
+python scripts/search.py --all --json "your query"
+
 # List available clients
 python scripts/search.py --list
 ```
+
+Results show the source file and, when the document has them, its title, URL and section (heading path). `--json` results carry `client`, `source`, `title`, `url` and `section` fields; `title`, `url` and `section` are `null` when unknown.
 
 ### Source Connectors
 
@@ -727,7 +756,90 @@ Edit the script to uncomment/comment clients in the `REINDEX_CLIENTS` and `GRAPH
 ```bash
 # Interactive wizard
 python scripts/create_client.py
+
+# Without questions
+python scripts/create_client.py --name myproject --documents-dir /path/to/docs
 ```
+
+Every script accepts `--clients-dir PATH`. See [Using Trove with a scraper](#using-trove-with-a-scraper).
+
+## Using Trove with a scraper
+
+Trove works well as the search half of a scrape pipeline: the scraper writes Markdown, Trove indexes it, and answers cite the page they came from.
+
+### Where clients live
+
+By default clients are folders in the repository's `clients/`. To keep them elsewhere, set `TROVE_CLIENTS_DIR` or pass `--clients-dir` to any script. The flag wins over the environment variable, which wins over the default. The MCP server reads `TROVE_CLIENTS_DIR` when it starts.
+
+A client is a folder with a `client.yaml`. Folders whose names start with `_` or `.`, and folders without a `client.yaml`, are not clients, so a workspace can keep a `_template/` folder next to its projects:
+
+```
+workspace/
+└── projects/                  # TROVE_CLIENTS_DIR=workspace/projects
+    ├── _template/             # ignored
+    ├── news-site/
+    │   ├── client.yaml
+    │   ├── documents/         # the scraper writes Markdown here
+    │   └── index/             # Trove's index, created on ingest
+    └── docs-site/
+        ├── client.yaml        # paths.documents may be absolute or a symlink
+        └── index/
+```
+
+```bash
+export TROVE_CLIENTS_DIR=$PWD/workspace/projects
+python scripts/create_client.py --name news-site
+# ... scraper writes workspace/projects/news-site/documents/*.md ...
+python scripts/ingest.py --client news-site --json
+python scripts/search.py --client news-site --json "what changed in the pricing"
+```
+
+### The Markdown contract
+
+Each page is one `.md` (or `.markdown`) file. It may start with YAML frontmatter:
+
+```markdown
+---
+title: Pricing changes for 2027
+url: https://example.com/blog/pricing-2027
+date: 2026-10-01
+domain: example.com
+page_type: article
+scraped_at: 2026-11-01T09:30:00Z
+content_hash: 4f1c2e
+---
+# Pricing changes for 2027
+
+## What is changing
+...
+```
+
+| Field | Type | Stored as | Used for |
+|-------|------|-----------|----------|
+| `title` | string | `title` | Shown with results and citations. Falls back to the first `#` heading |
+| `url` | string | `url` | Shown with results and citations |
+| `date` | date or string | `date` (ISO string) | Metadata |
+| `domain` | string | `domain` | Metadata |
+| `page_type` | string | `page_type` | Metadata |
+| `scraped_at` | datetime or string | `scraped_at` (ISO string) | Metadata |
+| `content_hash` | string | `page_content_hash` | Metadata (`content_hash` is the chunk's own hash) |
+
+All fields are optional and other keys are ignored. The frontmatter block is removed from the indexed text. If it is not valid YAML, Trove logs a warning and indexes the whole file as text; a file is never dropped because of its frontmatter.
+
+The body is split at its headings (`#` to `######`, and underlined headings). Each chunk records its heading path as `section`, for example `Pricing changes for 2027 > What is changing`, and long sections are split further to the usual chunk size. Headings inside code blocks are ignored.
+
+Images are not indexed: `![alt](url)` becomes its alt text and a line holding only images is dropped. To keep image syntax, set this in `client.yaml`:
+
+```yaml
+markdown:
+  strip_images: false
+```
+
+Other file types (PDF, HTML, Word and so on) are parsed as before and have no `section`.
+
+### Re-running the scraper
+
+Run `ingest.py` after each scrape. Only new and changed files are embedded; identical files are skipped even if the scraper rewrote them. Use `--json` to decide what to do next, for example to alert on `failed`. A page that disappears from `documents/` is reported as `deleted` and the incremental run removes its chunks. Cleaning up chunks left behind in other ways (for example by an interrupted run) is planned work, see [docs/REVIVAL-PLAN.md](docs/REVIVAL-PLAN.md).
 
 ## MCP Server (Claude Code Integration)
 

@@ -35,11 +35,66 @@ class ClientNotFoundError(FileNotFoundError):
             "Create one with scripts/create_client.py."
         )
 
+# Environment variable that points Trove at a clients folder outside the repository
+CLIENTS_DIR_ENV = "TROVE_CLIENTS_DIR"
+
+# Set by --clients-dir in the CLI scripts; wins over the environment variable
+_clients_dir_override: Optional[Path] = None
+
+
+def set_clients_dir(path: Optional[str | Path]) -> None:
+    """Use ``path`` as the clients folder for this process (the --clients-dir flag).
+
+    Pass None to go back to the environment variable and the default.
+    """
+    global _clients_dir_override
+    _clients_dir_override = Path(path).expanduser() if path else None
+
+
+def resolve_clients_dir(clients_dir: Optional[str | Path] = None) -> Path:
+    """The clients folder to use.
+
+    Precedence: an explicit ``clients_dir`` argument, then --clients-dir
+    (``set_clients_dir``), then the TROVE_CLIENTS_DIR environment variable,
+    then the default (the repository's ``clients/`` in a checkout, or
+    ``./clients`` for an installed copy, see core.paths).
+    """
+    if clients_dir is not None:
+        return Path(clients_dir).expanduser()
+    if _clients_dir_override is not None:
+        return _clients_dir_override
+    env = os.environ.get(CLIENTS_DIR_ENV)
+    if env:
+        return Path(env).expanduser()
+    from core.paths import default_clients_dir
+    return default_clients_dir()
+
+
+def add_clients_dir_argument(parser) -> None:
+    """Add the standard --clients-dir option to an argparse parser."""
+    parser.add_argument(
+        "--clients-dir",
+        metavar="PATH",
+        help=f"Folder that holds the client folders (default: ${CLIENTS_DIR_ENV}, else clients/)",
+    )
+
+
+def apply_clients_dir_argument(args) -> None:
+    """Apply a parsed --clients-dir option, if one was given."""
+    if getattr(args, "clients_dir", None):
+        set_clients_dir(args.clients_dir)
+
+
 # Name of the database file ChromaDB writes in a client's index folder
 INDEX_MARKER_FILE = "chroma.sqlite3"
 
 # Default document extensions for ingestion
 DEFAULT_DOCUMENT_EXTENSIONS = (".pdf", ".docx", ".doc", ".xlsx", ".xls", ".csv", ".html", ".txt", ".md", ".mbox")
+
+# Markdown options (client.yaml ``markdown:``). See core.markdown.
+DEFAULT_MARKDOWN_CONFIG = {
+    "strip_images": True,  # ![alt](url) becomes alt; image-only lines are dropped
+}
 
 # Default client configuration
 DEFAULT_CONFIG = {
@@ -125,7 +180,7 @@ DEFAULT_CONFIG = {
 _KNOWN_TOP_LEVEL_KEYS = {
     "name", "machine_name", "description", "paths", "documents",
     "embedding", "search", "llm", "code", "source_sync", "audit",
-    "references", "chunking", "graph", "sources",
+    "references", "chunking", "graph", "sources", "markdown",
 }
 
 # Known graph config keys
@@ -328,17 +383,17 @@ class Client:
     @property
     def documents_path(self) -> Path:
         """Path to client's documents directory."""
-        return self.path / self.config.get("paths", {}).get("documents", "documents")
+        return self.path / Path(self.config.get("paths", {}).get("documents", "documents")).expanduser()
 
     @property
     def index_path(self) -> Path:
         """Path to client's index directory."""
-        return self.path / self.config.get("paths", {}).get("index", "index")
+        return self.path / Path(self.config.get("paths", {}).get("index", "index")).expanduser()
 
     @property
     def prompts_path(self) -> Path:
         """Path to client's prompts directory."""
-        return self.path / self.config.get("paths", {}).get("prompts", "prompts")
+        return self.path / Path(self.config.get("paths", {}).get("prompts", "prompts")).expanduser()
 
     @property
     def search_config(self) -> dict:
@@ -361,6 +416,11 @@ class Client:
     def llm_config(self) -> dict:
         """LLM configuration."""
         return {**DEFAULT_CONFIG["llm"], **self.config.get("llm", {})}
+
+    @property
+    def markdown_config(self) -> dict:
+        """Markdown ingestion options, with defaults filled in."""
+        return {**DEFAULT_MARKDOWN_CONFIG, **(self.config.get("markdown") or {})}
 
     @property
     def documents_config(self) -> dict:
@@ -461,7 +521,7 @@ def load_client(client_name: str, clients_dir: Optional[Path] = None) -> Client:
 
     Args:
         client_name: Client directory name
-        clients_dir: Base directory for clients (default: see core.paths.default_clients_dir)
+        clients_dir: Base directory for clients (default: resolve_clients_dir())
 
     Returns:
         Client instance
@@ -469,10 +529,7 @@ def load_client(client_name: str, clients_dir: Optional[Path] = None) -> Client:
     Raises:
         ClientNotFoundError: If there is no folder for the client. Nothing is created.
     """
-    if clients_dir is None:
-        from core.paths import default_clients_dir
-        clients_dir = default_clients_dir()
-    clients_dir = Path(clients_dir)
+    clients_dir = resolve_clients_dir(clients_dir)
 
     client_path = clients_dir / client_name
     if not client_name or not client_path.is_dir():
@@ -505,23 +562,26 @@ def discover_clients(clients_dir: Optional[Path] = None) -> list[str]:
     """
     Discover available clients.
 
+    A client is a folder that holds a client.yaml. Folders whose names start
+    with "_" or "." are skipped, so a shared ``_template`` folder or a hidden
+    folder is never listed. Symlinked client folders are followed.
+
     Args:
-        clients_dir: Base directory for clients
+        clients_dir: Base directory for clients (default: resolve_clients_dir())
 
     Returns:
         List of client names
     """
-    if clients_dir is None:
-        from core.paths import default_clients_dir
-        clients_dir = default_clients_dir()
-    clients_dir = Path(clients_dir)
+    clients_dir = resolve_clients_dir(clients_dir)
 
     if not clients_dir.exists():
         return []
 
     clients = []
     for path in clients_dir.iterdir():
-        if path.is_dir() and not path.name.startswith("."):
+        if path.name.startswith((".", "_")):
+            continue
+        if path.is_dir() and (path / "client.yaml").is_file():
             clients.append(path.name)
 
     return sorted(clients)

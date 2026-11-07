@@ -14,6 +14,7 @@ Usage:
 import argparse
 import logging
 import os
+import json
 import sys
 from pathlib import Path
 
@@ -23,6 +24,7 @@ os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from core.client import add_clients_dir_argument, apply_clients_dir_argument
 from core.client import load_client, discover_clients
 from core.ingest import (
     DocumentIngestor,
@@ -111,6 +113,31 @@ def sync_client_sources(client_name: str) -> dict:
     }
 
 
+def _summary(client_name: str, mode: str, **counts) -> dict:
+    """Ingest summary for --json: file counts a scrape pipeline can act on."""
+    summary = {
+        "client": client_name,
+        "mode": mode,
+        "new": 0,
+        "changed": 0,
+        "unchanged": 0,
+        "deleted": 0,
+        "failed": 0,
+        "failed_files": [],
+        "chunks_added": 0,
+        "chunks_removed": 0,
+    }
+    summary.update(counts)
+    summary["failed"] = len(summary["failed_files"])
+    return summary
+
+
+def _drop_failed(manifest: dict, failed_files: list[str]) -> dict:
+    """Leave failed files out of the manifest so the next run retries them."""
+    failed = set(failed_files)
+    return {path: entry for path, entry in manifest.items() if path not in failed}
+
+
 def _should_sync_on_ingest(client) -> bool:
     """Check if any configured source has sync_on_ingest enabled."""
     sources_config = client.sources_config
@@ -140,7 +167,7 @@ def get_chunk_ids_for_file(searcher: HybridSearcher, file_path: str) -> list[str
 def incremental_reindex(
     client_name: str,
     include_code: bool = True,
-) -> None:
+) -> dict:
     """
     Incrementally reindex only changed files for a client.
 
@@ -148,10 +175,15 @@ def incremental_reindex(
     new, modified, and deleted files. Only reindexes what changed.
 
     Falls back to full rebuild if no manifest exists or embedding model changed.
+    Files rewritten with the same content count as unchanged (the manifest keeps
+    a content hash), so a scraper can rewrite its output on every run.
 
     Args:
         client_name: Name of the client
         include_code: Also run incremental code indexing if configured
+
+    Returns:
+        Summary dict (see _summary).
     """
     client = load_client(client_name)
     logger.info(f"Incremental reindex for: {client.name}")
@@ -159,7 +191,7 @@ def incremental_reindex(
     docs_path = client.documents_path
     if not docs_path.exists():
         logger.error(f"Documents directory not found: {docs_path}")
-        return
+        return _summary(client_name, "incremental", error=f"Documents directory not found: {docs_path}")
 
     # Get embedding config
     embedding_config = client.embedding_config
@@ -187,17 +219,20 @@ def incremental_reindex(
 
     if not indexed_files:
         logger.info("No file manifest found — falling back to full rebuild")
-        rebuild_index(client_name, include_code=include_code)
-        return
+        return rebuild_index(client_name, include_code=include_code)
 
     # Diff manifests
     new_files, modified_files, deleted_files = diff_file_manifest(current_files, indexed_files)
 
+    unchanged_count = len(current_files) - len(new_files) - len(modified_files)
+
     if not new_files and not modified_files and not deleted_files:
         logger.info("No document changes detected")
+        # Store the new mtimes, so identical rewritten files stay cheap to compare
+        save_file_manifest(client, current_files)
         if include_code:
             ingest_client_code_files(client_name, rebuild=False)
-        return
+        return _summary(client_name, "incremental", unchanged=unchanged_count)
 
     logger.info(
         f"Changes: {len(new_files)} new, {len(modified_files)} modified, "
@@ -219,11 +254,11 @@ def incremental_reindex(
     if not matches:
         logger.warning(f"Embedding model mismatch: {reason}")
         logger.warning("Falling back to full rebuild")
-        rebuild_index(client_name, include_code=include_code)
-        return
+        return rebuild_index(client_name, include_code=include_code)
 
     # Create ingestor with client's embedding model
     ingestor = DocumentIngestor(
+        markdown_config=client.markdown_config,
         embedding_model=embedding_model,
         passage_prefix=passage_prefix,
     )
@@ -258,11 +293,13 @@ def incremental_reindex(
     from core.pipeline import IngestionPipeline
 
     files_to_reindex = [Path(f) for f in new_files + modified_files]
+    failed_files: list[str] = []
 
     if files_to_reindex:
         pipeline = IngestionPipeline(ingestor=ingestor, searcher=searcher)
         stats = pipeline.run_documents(files_to_reindex, base_directory=docs_path)
         total_chunks_added = stats["total_chunks_indexed"]
+        failed_files = stats["failed_files"]
 
     # Single BM25 rebuild at the end
     try:
@@ -270,8 +307,8 @@ def incremental_reindex(
     except Exception as e:
         logger.warning(f"Failed to rebuild BM25 index: {e}")
 
-    # Save updated manifest
-    save_file_manifest(client, current_files)
+    # Save updated manifest (without failed files, so they are retried next time)
+    save_file_manifest(client, _drop_failed(current_files, failed_files))
 
     stats = searcher.get_stats()
     logger.info(
@@ -283,13 +320,25 @@ def incremental_reindex(
     if include_code:
         ingest_client_code_files(client_name, rebuild=False)
 
+    failed = set(failed_files)
+    return _summary(
+        client_name, "incremental",
+        new=len([f for f in new_files if f not in failed]),
+        changed=len([f for f in modified_files if f not in failed]),
+        unchanged=unchanged_count,
+        deleted=len(deleted_files),
+        failed_files=failed_files,
+        chunks_added=total_chunks_added,
+        chunks_removed=total_chunks_removed,
+    )
+
 
 def ingest_client_documents(
     client_name: str,
     documents_path: Path = None,
     force_bm25_rebuild: bool = False,
     resume: bool = False,
-) -> None:
+) -> dict:
     """
     Ingest documents for a client using the progressive pipeline.
 
@@ -312,7 +361,7 @@ def ingest_client_documents(
 
     if not docs_path.exists():
         logger.error(f"Documents directory not found: {docs_path}")
-        return
+        return _summary(client_name, "rebuild", error=f"Documents directory not found: {docs_path}")
 
     # Get embedding config from client
     embedding_config = client.embedding_config
@@ -321,6 +370,7 @@ def ingest_client_documents(
 
     # Create ingestor with client's embedding model
     ingestor = DocumentIngestor(
+        markdown_config=client.markdown_config,
         embedding_model=embedding_model,
         passage_prefix=passage_prefix,
     )
@@ -361,23 +411,33 @@ def ingest_client_documents(
 
     # Ingest documents with pipeline (progressive embed + index)
     logger.info(f"Ingesting documents from: {docs_path}")
+    run_stats: dict = {}
     ingest_directory(
         docs_path, ingestor, extensions=doc_extensions,
         exclude_patterns=doc_exclude_patterns,
         pipeline_searcher=searcher,
         contextualize=embedding_config.get("contextualize", False),
+        stats_out=run_stats,
     )
+    files_found = run_stats.get("files_found", 0)
+    failed_files = list(run_stats.get("failed_files", []))
+    chunks_added = run_stats.get("total_chunks_indexed", 0)
 
     # Also ingest documents from sources/ directory if it exists
     sources_path = client.sources_path
     if sources_path.exists() and any(sources_path.iterdir()):
         logger.info(f"Also ingesting source documents from: {sources_path}")
+        source_stats: dict = {}
         ingest_directory(
             sources_path, ingestor, extensions=doc_extensions,
             exclude_patterns=doc_exclude_patterns,
             pipeline_searcher=searcher,
             contextualize=embedding_config.get("contextualize", False),
+            stats_out=source_stats,
         )
+        files_found += source_stats.get("files_found", 0)
+        failed_files += source_stats.get("failed_files", [])
+        chunks_added += source_stats.get("total_chunks_indexed", 0)
 
     # BM25 rebuild once at end (or force rebuild if requested)
     if force_bm25_rebuild:
@@ -397,7 +457,14 @@ def ingest_client_documents(
     if sources_path.exists():
         sources_manifest = build_file_manifest(sources_path, doc_extensions, exclude_patterns=doc_exclude_patterns)
         manifest.update(sources_manifest)
-    save_file_manifest(client, manifest)
+    save_file_manifest(client, _drop_failed(manifest, failed_files))
+
+    return _summary(
+        client_name, "rebuild",
+        new=files_found - len(failed_files),
+        failed_files=failed_files,
+        chunks_added=chunks_added,
+    )
 
 
 def rebuild_index(
@@ -407,9 +474,9 @@ def rebuild_index(
     code_only: bool = False,
     resume: bool = False,
     sync_sources: bool = False,
-) -> None:
+) -> dict:
     """
-    Rebuild index from existing documents and code.
+    Rebuild index from existing documents and code. Returns the ingest summary.
 
     Args:
         client_name: Name of the client
@@ -426,12 +493,14 @@ def rebuild_index(
     if sync_sources or _should_sync_on_ingest(client):
         sync_client_sources(client_name)
 
+    summary = _summary(client_name, "rebuild")
     if not code_only:
-        ingest_client_documents(client_name, client.documents_path, force_bm25_rebuild, resume=resume)
+        summary = ingest_client_documents(client_name, client.documents_path, force_bm25_rebuild, resume=resume)
 
     # Index code if enabled
     if include_code or code_only:
         ingest_client_code_files(client_name, rebuild=True)
+    return summary
 
 
 def ingest_client_code_files(client_name: str, rebuild: bool = False) -> None:
@@ -459,6 +528,7 @@ def ingest_client_code_files(client_name: str, rebuild: bool = False) -> None:
 
     # Create ingestor
     ingestor = DocumentIngestor(
+        markdown_config=client.markdown_config,
         embedding_model=embedding_model,
         passage_prefix=passage_prefix,
     )
@@ -528,20 +598,21 @@ def pre_assess_clients(client_names: list[str]) -> dict:
     return assessments
 
 
-def _reindex_single_client(name: str, args) -> None:
+def _reindex_single_client(name: str, args) -> dict | None:
     """Reindex a single client (called from parallel or sequential loop)."""
     logger.info(f"--- {name} ---")
     if args.code_only or args.rebuild_code:
         ingest_client_code_files(name, rebuild=args.rebuild_code)
+        return None
     elif args.rebuild:
-        rebuild_index(
+        return rebuild_index(
             name,
             args.force_bm25_rebuild,
             include_code=not args.no_code,
             sync_sources=args.sync_sources,
         )
     else:
-        incremental_reindex(name, include_code=not args.no_code)
+        return incremental_reindex(name, include_code=not args.no_code)
 
 
 def list_clients() -> None:
@@ -643,7 +714,15 @@ def _main():
         help="Show index statistics"
     )
 
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Print a JSON summary (new, changed, unchanged, deleted and failed files) on stdout",
+    )
+
+    add_clients_dir_argument(parser)
     args = parser.parse_args()
+    apply_clients_dir_argument(args)
 
     if args.list:
         list_clients()
@@ -661,6 +740,7 @@ def _main():
         rm = ResourceManager()
         logger.info(f"System: {rm.summary()}")
         logger.info(f"Processing {len(client_names)} clients: {', '.join(client_names)}")
+        summaries: list[dict | None] = []
 
         if args.parallel:
             # Pre-assess clients and process small ones concurrently
@@ -688,7 +768,7 @@ def _main():
                     for future in as_completed(futures):
                         name = futures[future]
                         try:
-                            future.result()
+                            summaries.append(future.result())
                             logger.info(f"Done: {name}")
                         except Exception as e:
                             logger.error(f"Failed: {name}: {e}")
@@ -696,7 +776,7 @@ def _main():
             # Process medium/large clients sequentially with full resources
             for name in other_clients:
                 try:
-                    _reindex_single_client(name, args)
+                    summaries.append(_reindex_single_client(name, args))
                     logger.info(f"Done: {name}")
                 except Exception as e:
                     logger.error(f"Failed: {name}: {e}")
@@ -704,9 +784,12 @@ def _main():
             # Sequential processing (original behavior)
             for name in client_names:
                 try:
-                    _reindex_single_client(name, args)
+                    summaries.append(_reindex_single_client(name, args))
                 except Exception as e:
                     logger.error(f"Failed to process {name}: {e}")
+                    summaries.append(_summary(name, "error", error=str(e)))
+        if args.json:
+            print(json.dumps({"clients": [x for x in summaries if x]}, indent=2))
         return
 
     if not args.client:
@@ -720,10 +803,11 @@ def _main():
     if args.sync_sources:
         sync_client_sources(args.client)
 
+    summary = None
     if args.code_only or args.rebuild_code:
         ingest_client_code_files(args.client, rebuild=args.rebuild_code)
     elif args.rebuild:
-        rebuild_index(
+        summary = rebuild_index(
             args.client,
             args.force_bm25_rebuild,
             include_code=not args.no_code,
@@ -731,12 +815,15 @@ def _main():
             sync_sources=args.sync_sources,
         )
     elif args.path:
-        ingest_client_documents(args.client, args.path, args.force_bm25_rebuild, resume=args.resume)
+        summary = ingest_client_documents(args.client, args.path, args.force_bm25_rebuild, resume=args.resume)
         if not args.no_code:
             ingest_client_code_files(args.client)
     else:
         # Default: incremental reindex (only changed files)
-        incremental_reindex(args.client, include_code=not args.no_code)
+        summary = incremental_reindex(args.client, include_code=not args.no_code)
+
+    if args.json:
+        print(json.dumps(summary or _summary(args.client, "code"), indent=2))
 
 
 def show_stats(client_name: str) -> None:

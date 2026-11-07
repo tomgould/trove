@@ -48,6 +48,7 @@ def handle_ingest_file(arguments: dict) -> list[TextContent]:
         start = _time.time()
         emb_cfg = client.embedding_config
         ingestor = DocumentIngestor(
+            markdown_config=client.markdown_config,
             embedding_model=emb_cfg.get("model", "all-MiniLM-L6-v2"),
             passage_prefix=emb_cfg.get("passage_prefix", ""),
         )
@@ -120,6 +121,7 @@ def handle_ingest_url(arguments: dict) -> list[TextContent]:
         try:
             emb_cfg = client.embedding_config
             ingestor = DocumentIngestor(
+                markdown_config=client.markdown_config,
                 embedding_model=emb_cfg.get("model", "all-MiniLM-L6-v2"),
                 passage_prefix=emb_cfg.get("passage_prefix", ""),
             )
@@ -165,6 +167,7 @@ def handle_reindex_client(arguments: dict) -> list[TextContent]:
             client = load_client(cname, clients_dir=CLIENTS_DIR)
             emb_cfg = client.embedding_config
             ingestor = DocumentIngestor(
+                markdown_config=client.markdown_config,
                 embedding_model=emb_cfg.get("model", "all-MiniLM-L6-v2"),
                 passage_prefix=emb_cfg.get("passage_prefix", ""),
             )

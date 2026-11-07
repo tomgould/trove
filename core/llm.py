@@ -567,6 +567,8 @@ def build_citation_map(chunks: list[dict]) -> CitationMap:
             "source": metadata.get("source_file", "Unknown"),
             "page": metadata.get("page_number"),
             "section": metadata.get("section"),
+            "title": metadata.get("title"),
+            "url": metadata.get("url") or metadata.get("source_url"),
             "score": chunk.get("_rerank_score", chunk.get("_combined_score", 0)),
             "content_preview": chunk.get("content", "")[:150],
         }

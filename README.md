@@ -8,6 +8,8 @@ A local-first knowledge engine with hybrid search, source connectors, plugin ext
 - **Hybrid Search**: BM25 keyword + vector semantic search with cross-encoder re-ranking
 - **RRF Merge Strategy**: Reciprocal Rank Fusion as alternative to weighted merging
 - **MMR Diversity**: Maximal Marginal Relevance reduces redundant results
+- **Page Diversity**: At most two chunks per page (a print copy counts as its page) come before other pages' results
+- **Heading Match**: A result whose page title or section heading holds the query's words gets a small rerank bonus, so short official sections are found by their topic words
 - **HyDE**: Hypothetical Document Embeddings for better vector search on vague queries
 - **Multi-Query / RAG-Fusion**: Generate query variants and merge results via RRF
 - **Search Quality Indicators**: Scores, timing, source diversity, and strategy metadata
@@ -220,18 +222,21 @@ Features:
 Query → Contextualize (if follow-up)
       → BM25 (keyword) + Vector (semantic) in parallel
       → Merge (weighted or RRF)
-      → Cross-encoder re-rank (adaptive depth)
+      → Cross-encoder re-rank (adaptive depth) + heading match bonus
       → MMR diversity (if enabled)
       → Reference resolution (fetch appendices/sections)
       → [If recursive: analyze → retry with better query]
       → Data-first ordering (tiers, then rerank score)
+      → Page diversity (at most 2 chunks per page before other pages)
       → Final results + quality indicators
 ```
 
 - BM25 finds exact matches ("Appendix C" → actual Appendix C)
 - Vector finds semantic matches ("equivalent jurisdictions" → related content)
 - Merge via weighted scores (default) or RRF rank fusion
-- Cross-encoder picks the best results (adaptive depth reduces cost on high-confidence matches)
+- Cross-encoder picks the best results. Adaptive depth reranks only the top 30 candidates (`adaptive_rerank_depth`) when the same chunk tops both the keyword and the vector list, and never fewer than `top_k`
+- Heading match: each reranked chunk gets `heading_boost` (default 1.0) times the share of the query's words found in its page title or section path, with stop words ignored and plurals matched loosely. Chunks with no title or section get nothing
+- `top_k` is honoured up to 200 results: the candidate pool (`rerank_top_n`) grows to `top_k` when it is smaller
 - MMR reduces redundancy by penalizing similarity to already-selected chunks
 - Reference resolver fetches content when chunks say "see Appendix X"
 
@@ -244,6 +249,8 @@ The last step sorts results into tiers and orders by rerank score within each ti
 5. Chunks outside tiers 1 to 3 that contain a pointer phrase ("see appendix", "refer to appendix", "listed in appendix", "detailed in appendix" or "as per appendix"), even alongside other real content. They rank below every tier-4 chunk
 
 Chunks from the Markdown heading splitter are never ranked as data: whatever their path or shape, they rank as tier 4, or tier 5 when they contain a pointer phrase. The tiers come from `data_tier` in `core/search/searcher.py`.
+
+After the tiers, page diversity keeps at most `max_chunks_per_source` (default 2) chunks of one page ahead of other pages. A page is a chunk's `url`, or its source file when it has none. A file whose frontmatter `canonical_url` is another indexed file's `url` (a print copy, for example) counts as that page. The page's further chunks are moved, in order, behind the other results rather than dropped, so a page that is the only match still fills the results. Set `max_chunks_per_source: 0` (or `null`) in `search:` to turn it off.
 
 ### 3. Response Generation
 
@@ -392,7 +399,10 @@ search:
   # Adaptive reranking: reduce rerank depth on high-confidence matches
   adaptive_rerank: true
   adaptive_rerank_threshold: 0.9     # Combined score threshold to trigger
-  adaptive_rerank_depth: 15          # Reduced depth when triggered
+  adaptive_rerank_depth: 30          # Reduced depth when triggered (never below top_k)
+  # Result diversity and heading match
+  max_chunks_per_source: 2           # Chunks per page before other pages (0 or null = no limit)
+  heading_boost: 1.0                 # Rerank bonus for query words in the title or section (0 = off)
   # BM25 tuning
   bm25_k1: 1.5                        # Term frequency saturation (>0)
   bm25_b: 0.75                        # Document length normalization (0-1)
@@ -576,6 +586,9 @@ python scripts/search.py --client myproject --mmr-lambda 0.7 "your query"
 
 # Disable adaptive reranking
 python scripts/search.py --client myproject --no-adaptive "your query"
+
+# More results (at most 200; a larger number is lowered with a note)
+python scripts/search.py --client myproject --top-k 50 "your query"
 
 # JSON output (for scripting/comparison)
 python scripts/search.py --client myproject --json "your query"
@@ -854,10 +867,11 @@ content_hash: 4f1c2e
 | `page_type` | string | `page_type` | Metadata |
 | `scraped_at` | datetime or string | `scraped_at` (ISO string) | Metadata |
 | `content_hash` | string | `page_content_hash` | Metadata (`content_hash` is the chunk's own hash) |
+| `canonical_url` | string | `canonical_url` (string) | Groups a copy of a page (a print version, for example) with that page for [page diversity](#2-search-hybrid--agentic) when it equals another file's `url` |
 
-All fields are optional and other keys are ignored. `title` and `url` are always stored as text: a number becomes a string (`url: 12345` becomes `"12345"`), and a value that is not a plain string or number (a list, a mapping, a date, `.nan`, `true`, or blank) is ignored, so the title falls back to the first level-1 heading (`# Title` or a title underlined with `===`). A title from either source is cut to 300 characters, because it is copied into every chunk. Dates and datetimes in the other fields are stored as ISO strings and lists as comma-separated text. The frontmatter block is removed from the indexed text. If it is not valid YAML, is not a mapping, or has no closing `---`, Trove logs a warning and indexes the whole file as text; a file is never dropped because of its frontmatter.
+All fields are optional and other keys are ignored. `title`, `url` and `canonical_url` are always stored as text: a number becomes a string (`url: 12345` becomes `"12345"`), and a value that is not a plain string or number (a list, a mapping, a date, `.nan`, `true`, or blank) is ignored, so the title falls back to the first level-1 heading (`# Title` or a title underlined with `===`). A title from either source is cut to 300 characters, because it is copied into every chunk. Dates and datetimes in the other fields are stored as ISO strings and lists as comma-separated text. The frontmatter block is removed from the indexed text. If it is not valid YAML, is not a mapping, or has no closing `---`, Trove logs a warning and indexes the whole file as text; a file is never dropped because of its frontmatter.
 
-The body is split at its headings (`#` to `######`, and headings underlined with `===` or `---`). Each chunk records its heading path as `section`, for example `Pricing changes for 2027 > What is changing`. A section longer than 1500 characters is split further with the recursive splitter, with up to 100 characters of overlap; the overlap shrinks, to nothing if need be, so a chunk never goes over 1500 characters and no text is cut off.
+The body is split at its headings (`#` to `######`, and headings underlined with `===` or `---`). Each chunk records its heading path as `section`, for example `Pricing changes for 2027 > What is changing`. A section longer than 1500 characters is split further with the recursive splitter, with up to 100 characters of overlap; the overlap shrinks, to nothing if need be, so a chunk never goes over 1500 characters and no text is cut off. The overlap starts on a word boundary: a partial word at its start is left out, so no chunk starts mid-word.
 
 Headings inside fenced code blocks are ignored. A fence opened with three or more backticks closes only on a line holding the same character repeated at least as many times and nothing else (`~~~` fences likewise). A backtick line whose info string contains a backtick (```` ```js `x` ````) is ordinary text, not a fence. A fence that is never closed runs to the end of the file.
 
@@ -871,6 +885,8 @@ markdown:
 ```
 
 Other file types (PDF, HTML, Word and so on) go through Unstructured and the title chunker, and have no `section`.
+
+An index keeps each file's chunks as they were made until the file changes. After upgrading Trove, run `ingest.py --client C --rebuild` to chunk every file with the current rules (word-boundary overlaps, `canonical_url` metadata); until then unchanged files keep their old chunks, and a print copy counts as a page of its own. Search works on either.
 
 ### Re-running the scraper
 
@@ -886,7 +902,10 @@ These are facts of how the code works today. The [roadmap](docs/REVIVAL-PLAN.md)
 - `ingest.py --client C --path P` without `--resume` clears the client's whole index before it indexes `P`, so everything not under `P` is gone from the index. To index another folder, point `paths.documents` (or `--documents-dir` on `create_client.py`) at it, or give it its own client.
 - Unchanged-file skipping compares the SHA-256 of the whole file, so only byte-identical files are skipped. A scraper that rewrites a page's frontmatter (a new `scraped_at`, for example) with the same body makes that file count as changed and be embedded again.
 - In a client that mixes Markdown with spreadsheets, or with non-Markdown text that has more than 10 non-blank lines or more than 5 commas, those chunks sit in a higher [ranking tier](#2-search-hybrid--agentic) and can rank above a better Markdown answer.
-- The recursive splitter drops the separator where it splits, so a split at `". "` loses that full stop. With no separator left it cuts at exactly 1500 characters, which can split a word.
+- The recursive splitter drops the separator where it splits, so a split at `". "` loses that full stop. A run of more than 1500 characters with no whitespace is cut at exactly 1500 characters, which splits it.
+- Search has no "no confident answer" signal. Rerank scores do not separate unanswerable questions from answerable ones: on a test set of plain-language questions, some questions whose top result was the right answer scored lower than questions whose answer was not in the corpus at all.
+- Plain-language questions can still miss official wording that shares no words with them (for example "toddler" against "children aged 1 to 5 years"). Heading match helps only when the query's words appear in a title or heading.
+- Page diversity moves a page's third and later chunks behind other pages even when they are the better answer to the question.
 - The sufficiency check in `core/refinement.py` counts raw line breaks, blank lines included, when it decides whether a chunk holds real content. It affects only whether recursive search runs another refinement round.
 - A clients folder reached through a symlink re-embeds every file whenever the path form changes between the symlink path and the real path, see [Where clients live](#where-clients-live).
 - The MCP server reads `TROVE_CLIENTS_DIR` once at start-up and has no `--clients-dir` flag.

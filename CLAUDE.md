@@ -157,13 +157,16 @@ trove/
 ## Search Pipeline
 
 ```
-Query → BM25 (top rerank_top_n, default 50) + Vector (same) → Merge (weighted or RRF) → Rerank (cross-encoder) → MMR diversity → Data-first ordering (data_tier) → Results + SearchQuality
+Query → BM25 (top rerank_top_n, default 50, at least top_k) + Vector (same) → Merge (weighted or RRF) → Rerank (cross-encoder + heading match bonus) → MMR diversity → Data-first ordering (data_tier) → Page diversity (limit_per_page) → Results + SearchQuality
 ```
 
 - **Weighted merge** (default): normalizes scores to 0-1, combines with configurable weights
 - **RRF merge**: rank-based fusion, `score = sum(1/(k + rank))`, robust to score distribution differences
 - **Score normalization**: configurable `minmax` (default), `zscore`, or `raw` for weighted merge
-- **Adaptive reranking**: reduces rerank depth on high-confidence matches
+- **Adaptive reranking**: reduces rerank depth (default 30, never below top_k) on high-confidence matches
+- **top_k**: honoured up to `MAX_TOP_K` (200) in `core/search/searcher.py`
+- **Heading match**: `heading_boost` (default 1.0) times the share of query words in the chunk's title or section path is added to the rerank score
+- **Page diversity**: `max_chunks_per_source` (default 2) chunks per page come before other pages; a file whose `canonical_url` is another file's `url` counts as that page
 - **MMR diversity**: penalizes similarity to already-selected results (configurable `mmr_lambda`)
 - **HyDE**: generates hypothetical answer via LLM, embeds alongside raw query for vector search (`search.hyde: true`)
 - **Multi-query / RAG-Fusion**: generates query variants via LLM, searches each, merges via RRF (`search.multi_query: true`)
@@ -226,6 +229,9 @@ search:
   rrf_k: 60
   mmr_lambda: null              # null=disabled, 0.0-1.0
   adaptive_rerank: true
+  adaptive_rerank_depth: 30     # never below top_k
+  max_chunks_per_source: 2      # chunks per page before other pages (0/null = off)
+  heading_boost: 1.0            # rerank bonus for query words in title/section (0 = off)
   reranker: "local"             # "local" or "api"
   # Advanced query processing
   bm25_k1: 1.5                  # BM25 term frequency saturation (>0)

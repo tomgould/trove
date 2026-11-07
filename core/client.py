@@ -173,6 +173,7 @@ DEFAULT_CONFIG = {
         "cache_max_size": 128,   # Max cached queries per client
         # Result diversity
         "max_chunks_per_source": 2,  # Chunks per page before other pages (0 or null = no limit)
+        "heading_boost": 1.0,  # Rerank bonus for query words in the page title or section (0 = off)
     },
     "llm": {
         "provider": "lmstudio",
@@ -216,7 +217,7 @@ _KNOWN_SEARCH_KEYS = {
     "score_normalization",
     "hyde", "multi_query", "multi_query_count",
     "cache_ttl", "cache_max_size",
-    "max_chunks_per_source",
+    "max_chunks_per_source", "heading_boost",
 }
 
 # Known embedding model dimensions
@@ -295,6 +296,10 @@ def validate_config(config: dict) -> list[str]:
         cap = search_cfg.get("max_chunks_per_source")
         if cap is not None and (isinstance(cap, bool) or not isinstance(cap, int) or cap < 0):
             warnings.append(f"search.max_chunks_per_source should be a whole number >= 0 or null, got {cap!r}")
+
+        boost = search_cfg.get("heading_boost")
+        if boost is not None and (isinstance(boost, bool) or not isinstance(boost, (int, float)) or boost < 0):
+            warnings.append(f"search.heading_boost should be a number >= 0, got {boost!r}")
 
         # MMR lambda: None or 0-1
         mmr = search_cfg.get("mmr_lambda")

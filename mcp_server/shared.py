@@ -246,6 +246,7 @@ def load_trove_client(client_name: str, require_index: bool = True) -> tuple[Cli
         cross_reference_code=client.search_config.get("cross_reference_code", False),
         cross_reference_top_k=client.search_config.get("cross_reference_top_k", 3),
         max_chunks_per_source=client.search_config.get("max_chunks_per_source", 2),
+        heading_boost=client.search_config.get("heading_boost", 1.0),
         # Reranker backend
         reranker_backend=client.search_config.get("reranker", "local"),
         reranker_endpoint=client.search_config.get("reranker_endpoint"),

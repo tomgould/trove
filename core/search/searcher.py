@@ -98,6 +98,36 @@ def limit_per_page(chunks: list[dict], max_per_page: int | None, known_urls=froz
     return kept + moved
 
 
+def _light_stem(word: str) -> str:
+    """Drop a plural ending so "grapes" matches "grape" and "allergies" matches "allergy"."""
+    if len(word) <= 3:
+        return word
+    if word.endswith("ies"):
+        return word[:-3] + "y"
+    if word.endswith(("ches", "shes", "sses", "xes", "zes")):
+        return word[:-2]
+    if word.endswith("s") and not word.endswith(("ss", "us", "is")):
+        return word[:-1]
+    return word
+
+
+def heading_match(query: str, chunk: dict) -> float:
+    """Share of the query's words (0 to 1) found in a chunk's page title or section path.
+
+    Stop words are ignored and plurals are matched loosely. Chunks with no
+    title and no section score 0.
+    """
+    metadata = chunk.get("metadata") or {}
+    heading = f"{metadata.get('title') or ''} {metadata.get('section') or ''}"
+    if not heading.strip():
+        return 0.0
+    query_terms = {_light_stem(w) for w in advanced_tokenize(query)}
+    if not query_terms:
+        return 0.0
+    heading_terms = {_light_stem(w) for w in advanced_tokenize(heading)}
+    return len(query_terms & heading_terms) / len(query_terms)
+
+
 def filter_by_source(chunks: list[dict], source_filter) -> list[dict]:
     """Keep only chunks whose source file is in ``source_filter``."""
     allowed = set(source_filter)
@@ -165,6 +195,8 @@ class HybridSearcher:
         skip_bm25_load: bool = False,
         # Result diversity: at most this many chunks per page before other pages
         max_chunks_per_source: int | None = 2,
+        # Added to the rerank score, times the share of query words in the title or section
+        heading_boost: float = 1.0,
     ):
         """
         Initialize the hybrid searcher.
@@ -230,6 +262,7 @@ class HybridSearcher:
 
         # Result diversity (see limit_per_page)
         self.max_chunks_per_source = max_chunks_per_source
+        self.heading_boost = heading_boost or 0.0
         self._known_urls: frozenset[str] | None = None
 
         # Search quality tracking
@@ -1163,11 +1196,19 @@ class HybridSearcher:
         # Get re-ranking scores
         scores = self.reranker.predict(pairs)
 
-        # Add scores to chunk copies (avoid mutating originals)
+        # Add scores to chunk copies (avoid mutating originals). A chunk whose
+        # page title or section path holds the query's words gets heading_boost
+        # times the share of words matched, so official pages are found by the
+        # topic words in their headings.
         scored_chunks = []
         for chunk, score in zip(chunks, scores):
             chunk = chunk.copy()
             chunk["_rerank_score"] = float(score)
+            if self.heading_boost:
+                match = heading_match(query, chunk)
+                if match:
+                    chunk["_heading_match"] = round(match, 3)
+                    chunk["_rerank_score"] += self.heading_boost * match
             scored_chunks.append(chunk)
 
         # Sort by re-rank score and return top K
@@ -1280,6 +1321,7 @@ class HybridSearcher:
             str(sorted(repos) if repos else None),
             str(rerank_top_n),
             str(self.max_chunks_per_source),
+            str(self.heading_boost),
         ]
         config_hash = hashlib.md5("|".join(config_parts).encode()).hexdigest()[:8]
         return f"{query}|{top_k}|{min_score}|{config_hash}"

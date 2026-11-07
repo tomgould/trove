@@ -175,3 +175,67 @@ class TestPageDiversityInSearch:
 
         top3 = [r["metadata"]["url"] for r in results[:3]]
         assert GUIDE not in top3, top3
+
+
+class TestHeadingMatch:
+    def test_share_of_query_words_in_title_and_section(self):
+        from core.search.searcher import heading_match
+
+        chunk = {"metadata": {"title": "Choking hazards", "section": "Choking hazards > Small fruits > Grapes"}}
+        assert heading_match("grapes choking", chunk) == 1.0
+        assert heading_match("grape choking risk", chunk) == pytest.approx(2 / 3)
+        assert heading_match("bread", chunk) == 0.0
+        assert heading_match("grapes", {"metadata": {}}) == 0.0
+
+    def test_plurals_match_loosely(self):
+        from core.search.searcher import _light_stem
+
+        assert _light_stem("grapes") == _light_stem("grape")
+        assert _light_stem("allergies") == _light_stem("allergy")
+        assert _light_stem("dishes") == _light_stem("dish")
+        assert _light_stem("glass") == "glass"
+
+
+class TestHeadingBoostInSearch:
+    """A terse guidance section is found by the topic words in its headings, even when its
+    text never repeats them, ahead of chatty pages that use the words in passing."""
+
+    GUIDE = "https://health.example/choking-hazards"
+
+    def _corpus(self):
+        chunks = [
+            _page_chunk("g0", self.GUIDE, "Choking risk for under fives: cut them lengthways into quarters before serving.",
+                        title="Choking hazards", section="Choking hazards > Grapes",
+                        element_type="MarkdownSection"),
+        ]
+        chatty = [
+            "Our grape slushie is a hit at parties. Blend grapes with ice and a squeeze of lime for a cold drink.",
+            "Grape and cheese skewers: thread grapes and cheese cubes on sticks for a fun lunchbox snack.",
+            "Roasted grapes taste amazing on toast with a little honey and a pinch of thyme.",
+        ]
+        for i, text in enumerate(chatty):
+            url = f"https://recipes.example/grape-idea-{i}"
+            chunks.append(_page_chunk(f"r{i}", url, text, title=f"Grape idea {i}",
+                                      section=f"Grape idea {i} > Method", element_type="MarkdownSection"))
+        return chunks
+
+    def _rank_of_guide(self, results):
+        urls = [r["metadata"]["url"] for r in results]
+        return urls.index(self.GUIDE) + 1 if self.GUIDE in urls else None
+
+    def test_guidance_heading_ranks_first(self, searcher_factory):
+        searcher = searcher_factory(heading_boost=1.0)
+        _index(searcher, self._corpus())
+
+        results = searcher.search("grapes choking", top_k=4)
+
+        assert self._rank_of_guide(results) == 1, [r["id"] for r in results]
+        assert results[0]["_heading_match"] == 1.0
+
+    def test_without_the_boost_the_chatty_pages_win(self, searcher_factory):
+        searcher = searcher_factory(heading_boost=0)
+        _index(searcher, self._corpus())
+
+        results = searcher.search("grapes choking", top_k=4)
+
+        assert self._rank_of_guide(results) != 1, [r["id"] for r in results]

@@ -76,6 +76,7 @@ def _build_searcher(client, args) -> HybridSearcher:
         cross_reference_code=search_config.get("cross_reference_code", False),
         cross_reference_top_k=search_config.get("cross_reference_top_k", 3),
         max_chunks_per_source=search_config.get("max_chunks_per_source", 2),
+        heading_boost=search_config.get("heading_boost", 1.0),
     )
 
 

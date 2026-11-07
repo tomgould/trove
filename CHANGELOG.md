@@ -34,6 +34,9 @@ Trove can now be the search half of a scrape pipeline: clients outside the repos
 
 ### Fixes
 - After `trove_ingest_file` or `trove_ingest_url`, searches in the same MCP session found nothing: storing the cached searcher again closed it.
+- Markdown chunks no longer jump to the top of results as "data": the data ranking tier skips chunks from the Markdown section splitter, and counts only non-blank lines when it looks for lists. Listing pages and pages with leftover share and related links used to outrank the page that answered the question.
+- The recursive chunker cut the end off a chunk when the overlap made it too long, losing text at the end of long sections. The overlap now shrinks to fit, so chunks stay within the size limit and no text is lost.
+- A line like ```` ```js `x` ```` (a backtick in the info string) is no longer treated as the start of a code block.
 - A relative `--clients-dir` or `TROVE_CLIENTS_DIR` broke search and `--list` once a client had an index ("relative path can't be expressed as a file URI"). The clients folder is now made absolute when it is chosen, and the index check works with a relative index path too.
 
 ### Migration

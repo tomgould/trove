@@ -769,7 +769,7 @@ Trove works well as the search half of a scrape pipeline: the scraper writes Mar
 
 ### Where clients live
 
-By default clients are folders in the repository's `clients/`. To keep them elsewhere, set `TROVE_CLIENTS_DIR` or pass `--clients-dir` to any script. The flag wins over the environment variable, which wins over the default. A relative path is taken from the folder you run the script in. The MCP server reads `TROVE_CLIENTS_DIR` when it starts.
+By default clients are folders in the repository's `clients/`. To keep them elsewhere, set `TROVE_CLIENTS_DIR` or pass `--clients-dir` to any script. The flag wins over the environment variable, which wins over the default. A relative path is taken from the folder you run the script in. Symlinks in the path are kept as written, so a clients folder reached through a symlink stores its file keys under the symlink path, and switching between the symlink path and the real path re-embeds the files once. The MCP server reads `TROVE_CLIENTS_DIR` when it starts.
 
 A client is a folder with a `client.yaml`. Folders whose names start with `_` or `.`, and folders without a `client.yaml`, are not clients, so a workspace can keep a `_template/` folder next to its projects:
 

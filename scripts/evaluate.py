@@ -24,7 +24,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.client import add_clients_dir_argument, apply_clients_dir_argument
-from core.client import load_client, discover_clients
+from core.client import ConfigError, load_client, discover_clients, search_setting
 from core.evaluation import (
     EvalReport,
     EvalResult,
@@ -98,7 +98,7 @@ def create_searcher(client, merge_strategy=None):
         embedding_config=client.embedding_config,
         adaptive_rerank=search_config.get("adaptive_rerank", True),
         adaptive_rerank_threshold=search_config.get("adaptive_rerank_threshold", 0.9),
-        adaptive_rerank_depth=search_config.get("adaptive_rerank_depth", 30),
+        adaptive_rerank_depth=search_setting(search_config, "adaptive_rerank_depth"),
         merge_strategy=merge_strategy or search_config.get("merge_strategy", "weighted"),
         rrf_k=search_config.get("rrf_k", 60),
         mmr_lambda=search_config.get("mmr_lambda"),
@@ -106,8 +106,8 @@ def create_searcher(client, merge_strategy=None):
         code_priority_boost=search_config.get("code_priority_boost", 0.5),
         cross_reference_code=search_config.get("cross_reference_code", False),
         cross_reference_top_k=search_config.get("cross_reference_top_k", 3),
-        max_chunks_per_source=search_config.get("max_chunks_per_source", 2),
-        heading_boost=search_config.get("heading_boost", 1.0),
+        max_chunks_per_source=search_setting(search_config, "max_chunks_per_source"),
+        heading_boost=search_setting(search_config, "heading_boost"),
     )
 
 
@@ -239,7 +239,7 @@ def format_json_output(reports: list[EvalReport]) -> str:
     return json.dumps(output, indent=2)
 
 
-def main():
+def _main():
     parser = argparse.ArgumentParser(
         description="Trove evaluation tool",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -300,7 +300,7 @@ Examples:
             print(f"No test cases match tags: {args.tags}", file=sys.stderr)
             sys.exit(1)
 
-    top_k = args.top_k or client.search_config.get("top_k", 20)
+    top_k = args.top_k or search_setting(client.search_config, "top_k")
 
     # Set up LLM provider for RAG metrics
     provider = None
@@ -393,6 +393,14 @@ Examples:
             print(f"\nReport written to: {output_path}")
 
     print()
+
+
+def main():
+    try:
+        _main()
+    except ConfigError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

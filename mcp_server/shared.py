@@ -7,7 +7,7 @@ import threading
 from pathlib import Path
 from typing import Optional
 
-from core.client import load_client, discover_clients, Client
+from core.client import load_client, discover_clients, search_setting, Client
 from core.ingest_job import IngestionJobManager
 from core.search import HybridSearcher, SearchResult, SearchQuality
 from core.search.merge import merge_client_results
@@ -234,7 +234,7 @@ def load_trove_client(client_name: str, require_index: bool = True) -> tuple[Cli
         # Adaptive reranking
         adaptive_rerank=client.search_config.get("adaptive_rerank", True),
         adaptive_rerank_threshold=client.search_config.get("adaptive_rerank_threshold", 0.9),
-        adaptive_rerank_depth=client.search_config.get("adaptive_rerank_depth", 30),
+        adaptive_rerank_depth=search_setting(client.search_config, "adaptive_rerank_depth"),
         # Merge strategy
         merge_strategy=client.search_config.get("merge_strategy", "weighted"),
         rrf_k=client.search_config.get("rrf_k", 60),
@@ -245,8 +245,8 @@ def load_trove_client(client_name: str, require_index: bool = True) -> tuple[Cli
         code_priority_boost=client.search_config.get("code_priority_boost", 0.5),
         cross_reference_code=client.search_config.get("cross_reference_code", False),
         cross_reference_top_k=client.search_config.get("cross_reference_top_k", 3),
-        max_chunks_per_source=client.search_config.get("max_chunks_per_source", 2),
-        heading_boost=client.search_config.get("heading_boost", 1.0),
+        max_chunks_per_source=search_setting(client.search_config, "max_chunks_per_source"),
+        heading_boost=search_setting(client.search_config, "heading_boost"),
         # Reranker backend
         reranker_backend=client.search_config.get("reranker", "local"),
         reranker_endpoint=client.search_config.get("reranker_endpoint"),

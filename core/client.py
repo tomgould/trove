@@ -190,6 +190,42 @@ DEFAULT_CONFIG = {
 }
 
 
+class ConfigError(ValueError):
+    """A client.yaml value that search cannot use."""
+
+
+# Numeric search settings the CLI and the MCP server pass to the searcher:
+# key -> (whole numbers only, smallest allowed value)
+_SEARCH_NUMBER_SETTINGS = {
+    "top_k": (True, 1),
+    "rerank_top_n": (True, 1),
+    "adaptive_rerank_depth": (True, 1),
+    "max_chunks_per_source": (True, 0),
+    "heading_boost": (False, 0),
+}
+
+
+def search_setting(search_config: dict, key: str):
+    """A numeric search setting from ``search_config``, checked.
+
+    A missing or null value gives the documented default; for
+    ``max_chunks_per_source`` null means no limit and gives None. Any other
+    value that is not a number of the right kind, or is below the smallest
+    allowed value, raises ConfigError naming the setting.
+    """
+    whole, minimum = _SEARCH_NUMBER_SETTINGS[key]
+    value = search_config.get(key)
+    if value is None:
+        if key == "max_chunks_per_source" and key in search_config:
+            return None
+        return DEFAULT_CONFIG["search"][key]
+    kinds = int if whole else (int, float)
+    if isinstance(value, bool) or not isinstance(value, kinds) or value < minimum:
+        kind = "a whole number" if whole else "a number"
+        raise ConfigError(f"search.{key} in client.yaml must be {kind} >= {minimum} (or null), got {value!r}")
+    return value
+
+
 # Known top-level config keys
 _KNOWN_TOP_LEVEL_KEYS = {
     "name", "machine_name", "description", "paths", "documents",

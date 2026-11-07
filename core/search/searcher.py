@@ -57,11 +57,31 @@ def citation(chunk: dict) -> dict:
     }
 
 
+_DEFAULT_PORTS = {"80", "443"}
+
+
+def _url_host(url: str) -> str:
+    """The host of a URL, lower case, with its port unless it is 80 or 443; '' when it has none."""
+    rest = url.split("://", 1)[1] if "://" in url else (url[2:] if url.startswith("//") else "")
+    netloc = re.split(r"[/?#]", rest, maxsplit=1)[0].rsplit("@", 1)[-1].lower()
+    host, _, port = netloc.partition(":") if not netloc.startswith("[") else (netloc, "", "")
+    if port in _DEFAULT_PORTS:
+        port = ""
+    return f"{host}:{port}" if port else host
+
+
 def _norm_url(url) -> str:
-    """A URL without its fragment and trailing slash, for comparing pages."""
+    """A URL as a page identity: no scheme, host in lower case without a default port,
+    no fragment and no trailing slash. A value without a host is only trimmed."""
     if not isinstance(url, str):
         return ""
-    return url.strip().split("#", 1)[0].rstrip("/")
+    url = url.strip().split("#", 1)[0]
+    host = _url_host(url)
+    if not host:
+        return url.rstrip("/")
+    rest = url.split("://", 1)[1] if "://" in url else url[2:]
+    path = rest[len(re.split(r"[/?]", rest, maxsplit=1)[0]):]
+    return (host + path).rstrip("/")
 
 
 def page_key(chunk: dict, known_urls: set[str] | frozenset[str] = frozenset()) -> str:
@@ -69,13 +89,25 @@ def page_key(chunk: dict, known_urls: set[str] | frozenset[str] = frozenset()) -
 
     A chunk's page is its ``url`` (or its source file when it has no URL). A
     copy of another page, such as a print version, is grouped with that page
-    when its ``canonical_url`` is the ``url`` of another indexed file
-    (``known_urls`` holds the normalised URLs of the indexed chunks).
+    when its ``canonical_url`` is the ``url`` of another indexed file on the
+    same host (``known_urls`` holds the normalised URLs of the indexed
+    chunks). URLs compare without scheme, fragment or trailing slash, with the
+    host in any case and default ports ignored. A canonical URL on another
+    host is ignored, so a page cannot join another site's page.
     """
     metadata = chunk.get("metadata") or {}
-    url = _norm_url(metadata.get("url") or metadata.get("source_url"))
-    canonical = _norm_url(metadata.get("canonical_url"))
-    if canonical and canonical != url and canonical in known_urls:
+    raw_url = metadata.get("url") or metadata.get("source_url")
+    url = _norm_url(raw_url)
+    canonical_raw = metadata.get("canonical_url")
+    canonical = _norm_url(canonical_raw)
+    if (
+        canonical
+        and canonical != url
+        and canonical in known_urls
+        and isinstance(raw_url, str)
+        and _url_host(raw_url.strip())
+        and _url_host(raw_url.strip()) == _url_host(canonical_raw.strip())
+    ):
         return canonical
     return url or chunk_source(chunk)
 
@@ -228,7 +260,7 @@ class HybridSearcher:
         # Adaptive reranking settings
         self.adaptive_rerank = adaptive_rerank
         self.adaptive_rerank_threshold = adaptive_rerank_threshold
-        self.adaptive_rerank_depth = adaptive_rerank_depth
+        self.adaptive_rerank_depth = 30 if adaptive_rerank_depth is None else adaptive_rerank_depth
 
         # Merge strategy
         self.merge_strategy = merge_strategy
@@ -1367,7 +1399,7 @@ class HybridSearcher:
 
         # top_k is honoured up to MAX_TOP_K: the candidate pool is never smaller than top_k
         top_k = max(1, min(int(top_k), MAX_TOP_K))
-        rerank_top_n = max(int(rerank_top_n), top_k)
+        rerank_top_n = max(int(50 if rerank_top_n is None else rerank_top_n), top_k)
 
         # Multi-query dispatch: generate variants, search each, merge via RRF.
         # Bypasses top-level cache intentionally — LLM-generated variants may differ

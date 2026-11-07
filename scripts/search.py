@@ -22,7 +22,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.client import add_clients_dir_argument, apply_clients_dir_argument
-from core.client import ClientNotFoundError, load_client, discover_clients
+from core.client import ClientNotFoundError, ConfigError, load_client, discover_clients, search_setting
 from core.search import HybridSearcher
 from core.search.merge import merge_client_results
 from core.search.searcher import MAX_TOP_K, citation
@@ -67,7 +67,7 @@ def _build_searcher(client, args) -> HybridSearcher:
         # CLI overrides or config defaults
         adaptive_rerank=not args.no_adaptive if args.no_adaptive else search_config.get("adaptive_rerank", True),
         adaptive_rerank_threshold=search_config.get("adaptive_rerank_threshold", 0.9),
-        adaptive_rerank_depth=search_config.get("adaptive_rerank_depth", 30),
+        adaptive_rerank_depth=search_setting(search_config, "adaptive_rerank_depth"),
         merge_strategy=args.merge_strategy or search_config.get("merge_strategy", "weighted"),
         rrf_k=search_config.get("rrf_k", 60),
         mmr_lambda=args.mmr_lambda if args.mmr_lambda is not None else search_config.get("mmr_lambda"),
@@ -75,8 +75,8 @@ def _build_searcher(client, args) -> HybridSearcher:
         code_priority_boost=search_config.get("code_priority_boost", 0.5),
         cross_reference_code=search_config.get("cross_reference_code", False),
         cross_reference_top_k=search_config.get("cross_reference_top_k", 3),
-        max_chunks_per_source=search_config.get("max_chunks_per_source", 2),
-        heading_boost=search_config.get("heading_boost", 1.0),
+        max_chunks_per_source=search_setting(search_config, "max_chunks_per_source"),
+        heading_boost=search_setting(search_config, "heading_boost"),
     )
 
 
@@ -158,11 +158,11 @@ def run_search(args):
         sys.exit(1)
 
     searcher = _build_searcher(client, args)
-    top_k = _top_k(args.top_k or client.search_config.get("top_k", 20))
+    top_k = _top_k(args.top_k or search_setting(client.search_config, "top_k"))
 
     # Run search with quality
     search_result = searcher.search_with_quality(
-        query=query, top_k=top_k, rerank_top_n=client.search_config.get("rerank_top_n", 50),
+        query=query, top_k=top_k, rerank_top_n=search_setting(client.search_config, "rerank_top_n"),
     )
     results = search_result.results
     quality = search_result.quality
@@ -231,7 +231,7 @@ def run_multi_search(args, client_names: list[str]):
     for client in clients:
         searcher = _build_searcher(client, args)
         per_client[client.machine_name] = searcher.search_with_quality(
-            query=query, top_k=top_k, rerank_top_n=client.search_config.get("rerank_top_n", 50),
+            query=query, top_k=top_k, rerank_top_n=search_setting(client.search_config, "rerank_top_n"),
         ).results
         searcher.close()
     results = merge_client_results(per_client, top_k=top_k)
@@ -306,12 +306,16 @@ Examples:
     if args.verbose:
         logging.getLogger().setLevel(logging.INFO)
 
-    if args.client:
-        run_search(args)
-    elif args.all:
-        run_multi_search(args, discover_clients())
-    else:
-        run_multi_search(args, [n.strip() for n in args.clients.split(",") if n.strip()])
+    try:
+        if args.client:
+            run_search(args)
+        elif args.all:
+            run_multi_search(args, discover_clients())
+        else:
+            run_multi_search(args, [n.strip() for n in args.clients.split(",") if n.strip()])
+    except ConfigError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.client import add_clients_dir_argument, apply_clients_dir_argument
 from core.agents import AgentLoader
-from core.client import load_client, discover_clients
+from core.client import load_client, discover_clients, search_setting
 from core.llm import create_provider_from_config
 from core.paths import default_agents_dir
 from core.runner import AgentRunner
@@ -49,7 +49,7 @@ def create_searcher(client):
         embedding_config=client.embedding_config,
         adaptive_rerank=search_config.get("adaptive_rerank", True),
         adaptive_rerank_threshold=search_config.get("adaptive_rerank_threshold", 0.9),
-        adaptive_rerank_depth=search_config.get("adaptive_rerank_depth", 30),
+        adaptive_rerank_depth=search_setting(search_config, "adaptive_rerank_depth"),
         merge_strategy=search_config.get("merge_strategy", "weighted"),
         rrf_k=search_config.get("rrf_k", 60),
         mmr_lambda=search_config.get("mmr_lambda"),
@@ -57,8 +57,8 @@ def create_searcher(client):
         code_priority_boost=search_config.get("code_priority_boost", 0.5),
         cross_reference_code=search_config.get("cross_reference_code", False),
         cross_reference_top_k=search_config.get("cross_reference_top_k", 3),
-        max_chunks_per_source=search_config.get("max_chunks_per_source", 2),
-        heading_boost=search_config.get("heading_boost", 1.0),
+        max_chunks_per_source=search_setting(search_config, "max_chunks_per_source"),
+        heading_boost=search_setting(search_config, "heading_boost"),
         reranker_backend=search_config.get("reranker", "local"),
         reranker_endpoint=search_config.get("reranker_endpoint"),
         bm25_k1=search_config.get("bm25_k1", 1.5),

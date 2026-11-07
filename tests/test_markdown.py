@@ -58,8 +58,41 @@ class TestFrontmatter:
     def test_values_are_scalars_chroma_accepts(self):
         from core.markdown import frontmatter_metadata
 
-        meta = frontmatter_metadata({"title": ["a", "b"], "date": datetime.datetime(2026, 1, 2, 3, 4), "url": 42})
-        assert meta == {"title": "a, b", "date": "2026-01-02T03:04:00", "url": 42}
+        meta = frontmatter_metadata({"tags": 1, "date": datetime.datetime(2026, 1, 2, 3, 4), "domain": ["a", "b"]})
+        assert meta == {"date": "2026-01-02T03:04:00", "domain": "a, b"}
+
+    def test_numeric_title_and_url_become_strings(self):
+        from core.markdown import frontmatter_metadata
+
+        meta = frontmatter_metadata({"title": 2026, "url": 12345})
+        assert meta == {"title": "2026", "url": "12345"}
+
+    def test_url_number_from_yaml_is_a_string(self):
+        from core.markdown import frontmatter_metadata, split_frontmatter
+
+        fm, _ = split_frontmatter("---\ntitle: '  Spaced  '\nurl: 12345\n---\nBody")
+        assert frontmatter_metadata(fm) == {"title": "Spaced", "url": "12345"}
+
+    @pytest.mark.parametrize("value", [float("nan"), float("inf"), True, ["a", "b"], {"k": "v"}, "   "])
+    def test_unusable_title_and_url_are_ignored(self, value):
+        from core.markdown import frontmatter_metadata
+
+        assert frontmatter_metadata({"title": value, "url": value, "domain": "example.com"}) == {
+            "domain": "example.com",
+        }
+
+    def test_nan_title_from_yaml_is_ignored(self):
+        from core.markdown import frontmatter_metadata, split_frontmatter
+
+        fm, _ = split_frontmatter("---\ntitle: .nan\nurl: https://example.com/a\n---\nBody")
+        assert frontmatter_metadata(fm) == {"url": "https://example.com/a"}
+
+    def test_long_title_is_capped(self):
+        from core.markdown import MAX_TITLE_CHARS, frontmatter_metadata
+
+        meta = frontmatter_metadata({"title": "x" * 15000})
+        assert MAX_TITLE_CHARS == 300
+        assert meta["title"] == "x" * 300
 
     def test_no_frontmatter(self):
         from core.markdown import split_frontmatter

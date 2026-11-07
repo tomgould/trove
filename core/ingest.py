@@ -405,7 +405,7 @@ class DocumentIngestor:
         See core.markdown. Bad frontmatter is logged and the whole file is indexed.
         """
         from core.markdown import (
-            chunk_markdown, first_heading, frontmatter_metadata, split_frontmatter, strip_images,
+            chunk_markdown, clean_title, first_heading, frontmatter_metadata, split_frontmatter, strip_images,
         )
 
         path = Path(path)
@@ -415,13 +415,13 @@ class DocumentIngestor:
         if self.markdown_config.get("strip_images", True):
             body = strip_images(body)
 
-        title = page_meta.get("title") or first_heading(body)
+        title = page_meta.get("title") or clean_title(first_heading(body))
         if title and "title" not in page_meta:
             page_meta["title"] = title
 
         pieces = chunk_markdown(
             body,
-            title=title if isinstance(title, str) else None,
+            title=title,
             max_chars=self.chunk_max_chars,
             overlap=self.chunk_overlap,
         )

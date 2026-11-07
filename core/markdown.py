@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import logging
+import math
 import re
 
 import yaml
@@ -42,6 +43,9 @@ SECTION_SEPARATOR = " > "
 # A section shorter than this is merged into the chunk before it, so a short
 # headed section ("## Install" plus one line) is not dropped as a too-short chunk.
 MIN_SECTION_CHARS = 80
+
+# The stored page title is cut to this length; it is copied into every chunk.
+MAX_TITLE_CHARS = 300
 
 _FENCE_RE = re.compile(r"^\s{0,3}(`{3,}|~{3,})")
 _FENCE_CLOSE_RE = re.compile(r"^\s{0,3}(`{3,}|~{3,})\s*$")
@@ -106,11 +110,46 @@ def _scalar(value):
     return str(value)
 
 
+def _text_value(value) -> str | None:
+    """A frontmatter title or url as a string, or None when it is not usable.
+
+    Only plain strings and numbers are used; NaN, infinity, booleans, lists,
+    mappings, dates and blank strings are ignored.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str):
+        return value.strip() or None
+    return None
+
+
+def clean_title(title: str | None) -> str | None:
+    """A page title trimmed and cut to MAX_TITLE_CHARS, or None when empty."""
+    if not title:
+        return None
+    return title.strip()[:MAX_TITLE_CHARS].strip() or None
+
+
 def frontmatter_metadata(frontmatter: dict) -> dict:
-    """The known frontmatter fields, renamed and coerced for chunk metadata."""
+    """The known frontmatter fields, renamed and coerced for chunk metadata.
+
+    ``title`` and ``url`` are always strings (see ``_text_value``), and the
+    title is cut to MAX_TITLE_CHARS characters.
+    """
     meta = {}
     for key, meta_key in FRONTMATTER_FIELDS.items():
         value = frontmatter.get(key)
+        if key in ("title", "url"):
+            value = _text_value(value)
+            if key == "title":
+                value = clean_title(value)
+            if value is not None:
+                meta[meta_key] = value
+            continue
         if value is None or value == "":
             continue
         meta[meta_key] = _scalar(value)

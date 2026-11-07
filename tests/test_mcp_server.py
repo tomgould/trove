@@ -182,6 +182,7 @@ class TestIngestIntoNewClient:
         assert "b.md" not in before
 
     def test_search_after_ingest_url_finds_the_page(self, fresh_client):
+        """Regression: ingesting a URL closed the cached searcher, so even old content was not found."""
         from mcp_server.handlers.ingest import handle_ingest_file, handle_ingest_url
         from mcp_server.handlers.search import handle_search_client
 
@@ -195,6 +196,8 @@ class TestIngestIntoNewClient:
         response.raise_for_status.return_value = None
         with patch("requests.get", return_value=response):
             handle_ingest_url({"client_name": "fresh", "url": "https://example.com/glaciers"})
+        old = handle_search_client({"client_name": "fresh", "query": "sourdough starter flour"})[0].text
+        assert "a.md" in old, old
         after = handle_search_client({"client_name": "fresh", "query": "glacier moraine"})[0].text
         assert "moraine" in after, after
 

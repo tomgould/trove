@@ -26,18 +26,18 @@ A local-first knowledge engine with hybrid search, source connectors, plugin ext
 - **Incremental Updates**: Only changed files are re-crawled and reindexed.
 
 ### Plugin System
-- **6 Extension Points**: Custom embedding models, chunkers, parsers, rerankers, LLM providers, and merge strategies
-- **Plugin Registry**: Register and lookup plugins by name with duplicate detection
-- **Auto-Discovery**: Drop a `.py` file or package in `plugins/` and it's loaded on startup
-- **Built-in Refactoring**: LLM providers and rerankers already implement plugin interfaces
+- **6 Extension Points**: Interfaces for embedding models, chunkers, parsers, rerankers, LLM providers, and merge strategies
+- **Plugin Registry**: Register and look up plugins by name with duplicate detection
+- **Plugin Loader**: Discovers `.py` files and packages in a `plugins/` folder and calls their `register()`. Trove does not call the loader at start-up, so plugins are not loaded automatically; see [Known limits](#known-limits)
+- **Built-in Implementations**: The LLM providers and rerankers implement the plugin interfaces
 
 ### Ingestion & Indexing
 - **Producer-Consumer Pipeline**: Parallel file parsing (ThreadPool) → GPU batch embedding → progressive ChromaDB indexing
 - **Fast File Collection**: `git ls-files` for git repos (near-instant), `os.scandir` fallback, parallel change detection
 - **Ctrl+C Safe**: Each GPU batch is indexed immediately; interrupt loses at most one batch, resume skips already-indexed files
 - **Code Indexing**: Tree-sitter AST parsing for Python, TypeScript, JavaScript, PHP, HTML, CSS, YAML, JSON, Gherkin, Dart
-- **Semantic Chunking**: Split by embedding similarity drops (alternative to title-based)
-- **Recursive Chunking**: Priority-ordered separators with fallback
+- **Markdown Sections**: Markdown is split at its headings, with frontmatter and the heading path stored on each chunk (see [Using Trove with a scraper](#using-trove-with-a-scraper))
+- **Chunking Strategies**: Title-based, semantic (split where embedding similarity drops) and recursive (priority-ordered separators) chunkers in `core/chunking.py`. Ingestion uses the title chunker for non-Markdown files; see [Known limits](#known-limits)
 - **Contextual Embeddings**: Prepend document context to chunks before embedding
 - **Chunk Quality Validation**: Min-length, alphanumeric, and content-hash deduplication
 
@@ -75,7 +75,7 @@ A local-first knowledge engine with hybrid search, source connectors, plugin ext
 
 ## Quick Start
 
-Trove supports Python 3.11, 3.12 and 3.13. Code indexing needs tree-sitter-languages, which has no wheels for 3.13 yet, so on 3.13 everything works except code indexing.
+Trove supports Python 3.11, 3.12 and 3.13. Code indexing needs tree-sitter-languages, which has no wheels for 3.13, so on 3.13 everything works except code indexing.
 
 ```bash
 # Get the code and install dependencies
@@ -136,7 +136,7 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 pip install ".[mcp,docs]"
 ```
 
-An installed copy provides the commands `trove-server`, `trove-search`, `trove-ingest`, `trove-sources` and `trove-create-client`. They look for clients in a `clients/` folder in the current directory. Run from a checkout, the scripts in `scripts/` use the checkout's own `clients/` folder.
+An installed copy provides the commands `trove-server`, `trove-search`, `trove-ingest`, `trove-sources` and `trove-create-client`. They look for clients in a `clients/` folder in the current directory. Run from a checkout, the scripts in `scripts/` use the checkout's own `clients/` folder. `TROVE_CLIENTS_DIR` and `--clients-dir` override both, see [Where clients live](#where-clients-live).
 
 ## Creating a Client
 
@@ -199,18 +199,18 @@ Then create `clients/myproject/client.yaml` (see Client Configuration below).
 PDF/DOCX/XLSX/CSV/MBOX/MD → Unstructured → Chunks with metadata → Vector DB + BM25 Index
 ```
 
-Supported file types:
+Supported file types (the default `documents.extensions` list):
 - **PDF** - Text extraction with tables, lists preserved
 - **Word** - DOCX, DOC
 - **Spreadsheets** - XLSX, XLS, CSV
 - **Email archives** - MBOX (Gmail exports, etc.)
-- **Markdown** - Ideal for scraped API docs
+- **Markdown** - `.md`, split at headings by Trove's own Markdown splitter instead of Unstructured. `.markdown` files are handled the same way once `.markdown` is added to `documents.extensions`
 - **HTML** - Web pages
 - **Plain text** - TXT files
 
 Features:
 - Document structure preserved (headings, sections)
-- Automatic chunking by section
+- Chunking by title for parsed documents, by heading for Markdown
 - Email metadata preserved (subject, from, to, date)
 - Recursive directory scanning (all subdirectories)
 
@@ -224,6 +224,7 @@ Query → Contextualize (if follow-up)
       → MMR diversity (if enabled)
       → Reference resolution (fetch appendices/sections)
       → [If recursive: analyze → retry with better query]
+      → Data-first ordering (tiers, then rerank score)
       → Final results + quality indicators
 ```
 
@@ -233,6 +234,16 @@ Query → Contextualize (if follow-up)
 - Cross-encoder picks the best results (adaptive depth reduces cost on high-confidence matches)
 - MMR reduces redundancy by penalizing similarity to already-selected chunks
 - Reference resolver fetches content when chunks say "see Appendix X"
+
+The last step sorts results into tiers and orders by rerank score within each tier:
+
+1. Spreadsheets (`.xlsx`, `.xls`, `.csv`) whose file name contains `reference`, `list`, `countries` or `data`
+2. Other spreadsheets, and non-spreadsheet files whose path contains `reference` or `list`
+3. Spreadsheets whose file name contains `form`, `assessment` or `template`, and non-Markdown chunks that look like data: more than 10 non-blank lines, more than 5 commas, or the text "high" anywhere in the chunk together with one of a few country names hard-coded in `data_tier`
+4. Everything else
+5. Chunks that only point elsewhere ("see appendix", "refer to appendix" and similar)
+
+Chunks from the Markdown heading splitter are never ranked as data: whatever their path or shape, they rank as tier 4, or tier 5 when they only point elsewhere. The tiers come from `data_tier` in `core/search/searcher.py`.
 
 ### 3. Response Generation
 
@@ -251,13 +262,17 @@ Trove/
 ├── core/
 │   ├── data/agents/          # Agent YAML templates (shipped in the package)
 │   ├── paths.py              # Where the clients and agents folders are
-│   ├── ingest.py             # Document processing with Unstructured
+│   ├── ingest.py             # Document processing with Unstructured, file manifest
+│   ├── markdown.py           # Markdown frontmatter, image stripping, heading splitter
 │   ├── pipeline.py           # Producer-consumer ingestion pipeline
+│   ├── model_cache.py        # Keeps embedding models and rerankers loaded, shared across clients
+│   ├── resource_manager.py   # Probes CPU, RAM and GPU to pick concurrency settings
+│   ├── health.py             # Circuit breaker for the LM Studio connection
 │   ├── search/               # Hybrid search package
 │   │   ├── types.py          # SearchQuality, SearchResult dataclasses
 │   │   ├── tokenizer.py      # EnhancedTokenizer, stemming, stop words
 │   │   ├── cache.py          # Search result LRU+TTL cache
-│   │   ├── merge.py          # merge_search_results() for multi-index merging
+│   │   ├── merge.py          # Merging results across indexes and across clients (RRF)
 │   │   └── searcher.py       # HybridSearcher (BM25 + vector + re-ranking + recursive)
 │   ├── llm.py                # LLM providers (LM Studio, Claude)
 │   ├── client.py             # Client configuration + validation
@@ -295,8 +310,9 @@ Trove/
 │   │   └── extractors/       # Language-specific extractors
 │   └── graph/                # Knowledge graph subsystem
 │       ├── models.py         # Entity, Relationship dataclasses
-│       ├── store.py          # KnowledgeGraph (NetworkX + JSON)
+│       ├── store.py          # KnowledgeGraph (NetworkX + SQLite)
 │       ├── extractor.py      # LLM-based entity/relationship extraction
+│       ├── progress.py       # Graph build progress tracking
 │       ├── search.py         # Graph search modes
 │       └── export.py         # Stats and D3.js export
 ├── plugins/                   # User plugin directory (drop .py files here)
@@ -323,8 +339,11 @@ Trove/
 │   ├── sources.py            # CLI for source connectors (GitHub, web)
 │   ├── mcp_server.py         # MCP server launch script
 │   ├── run_agent.py          # CLI for running agents locally
+│   ├── benchmark_embeddings.py # Compare embedding models on an eval dataset
 │   ├── watch_and_reindex.py  # Source sync + file watcher
-│   └── sync_prompts.py       # Sync prompts from prompts.chat API
+│   ├── sync_prompts.py       # Sync prompts from prompts.chat API (needs the optional client)
+│   └── list_docs.sh          # Print an inventory of the office documents and PDFs in a folder
+├── overnight-rebuild.sh      # Reindex and rebuild graphs for a list of clients
 ├── constraints/              # Exact versions from a working install, per Python version
 └── tests/
     ├── conftest.py           # Shared fixtures
@@ -343,6 +362,11 @@ paths:
   documents: "documents"
   index: "index"
   prompts: "prompts"
+
+# File types to ingest. The list replaces the default list, so name every type you want
+documents:
+  extensions: [".pdf", ".docx", ".doc", ".xlsx", ".xls", ".csv", ".html", ".txt", ".md", ".mbox"]
+  exclude_extensions: []           # e.g. [".csv", ".xlsx"] to skip spreadsheets
 
 # Embedding model settings
 embedding:
@@ -378,7 +402,7 @@ search:
   multi_query: false                   # Generate query variants and merge via RRF
   multi_query_count: 3                 # Number of query variants (2-7)
   # Search result caching
-  cache_ttl: 0                         # TTL in seconds (0 = disabled)
+  cache_ttl: 300                       # TTL in seconds (0 = disabled)
   cache_max_size: 128                  # Max cached queries per client
   # Reranker backend: "local" (CrossEncoder) or "api" (Cohere-compatible)
   reranker: "local"
@@ -430,7 +454,9 @@ graph:
   max_description_chars: 200    # Truncate descriptions
   search_mode: "naive"          # Default search: naive, local, global, hybrid, mix
 
-# Optional: Chunking strategy
+# Optional: Chunking strategy. Client.chunking_config returns these, but ingestion does
+# not pass them to the chunkers (see Known limits): non-Markdown files use the title chunker
+# and Markdown the heading splitter, both at 1500 characters with 100 overlap
 chunking:
   strategy: "title"             # "title", "semantic", or "recursive"
   max_chunk_size: 1500
@@ -505,10 +531,10 @@ python scripts/ingest.py --client myproject
 # Rebuild from client's documents directory
 python scripts/ingest.py --client myproject --rebuild
 
-# Rebuild ALL clients at once
+# Incremental run for every client (add --rebuild for a full rebuild of each)
 python scripts/ingest.py --all
 
-# Rebuild all clients, documents only (skip code)
+# Every client, documents only (skip code)
 python scripts/ingest.py --all --no-code
 
 # Resume an interrupted ingestion (skips already-processed files)
@@ -619,7 +645,7 @@ python scripts/watch_and_reindex.py --dry-run
 python scripts/watch_and_reindex.py --client myproject
 
 # Set up as cron (every 15 minutes)
-*/15 * * * * cd /path/to/trove && ./venv/bin/python scripts/watch_and_reindex.py
+*/15 * * * * cd /path/to/trove && .venv/bin/python scripts/watch_and_reindex.py
 ```
 
 #### Source Sync
@@ -761,7 +787,7 @@ python scripts/create_client.py
 python scripts/create_client.py --name myproject --documents-dir /path/to/docs
 ```
 
-Every script accepts `--clients-dir PATH`. See [Using Trove with a scraper](#using-trove-with-a-scraper).
+Every Python script in `scripts/` except `mcp_server.py` accepts `--clients-dir PATH`; `sources.py` takes it before the subcommand (`sources.py --clients-dir PATH sync --all`). See [Using Trove with a scraper](#using-trove-with-a-scraper).
 
 ## Using Trove with a scraper
 
@@ -769,7 +795,11 @@ Trove works well as the search half of a scrape pipeline: the scraper writes Mar
 
 ### Where clients live
 
-By default clients are folders in the repository's `clients/`. To keep them elsewhere, set `TROVE_CLIENTS_DIR` or pass `--clients-dir` to any script. The flag wins over the environment variable, which wins over the default. A relative path is taken from the folder you run the script in. Symlinks in the path are kept as written, so a clients folder reached through a symlink stores its file keys under the symlink path, and switching between the symlink path and the real path re-embeds the files once. The MCP server reads `TROVE_CLIENTS_DIR` when it starts.
+By default clients are folders in the repository's `clients/` (or `./clients` for an installed copy). To keep them elsewhere, set `TROVE_CLIENTS_DIR` or pass `--clients-dir` to a CLI script. The flag wins over the environment variable, which wins over the default. A relative path, from either, is resolved once to an absolute path against the folder you run the script in, and `~` is expanded. `..` is collapsed but symlinks in the path are kept as written.
+
+The manifest and the chunks key each file by its full path. A clients folder reached through a symlink therefore stores its files under the symlink path, and every switch between the symlink path and the real path makes every file look deleted under one form and new under the other: the next ingest removes the old chunks and embeds all the files again. Use one path form consistently.
+
+The MCP server has no `--clients-dir` flag. It reads `TROVE_CLIENTS_DIR` once, when it starts.
 
 A client is a folder with a `client.yaml`. Folders whose names start with `_` or `.`, and folders without a `client.yaml`, are not clients, so a workspace can keep a `_template/` folder next to its projects:
 
@@ -796,7 +826,7 @@ python scripts/search.py --client news-site --json "what changed in the pricing"
 
 ### The Markdown contract
 
-Each page is one `.md` (or `.markdown`) file. It may start with YAML frontmatter:
+Each page is one `.md` file (`.markdown` works too once it is added to `documents.extensions`). It may start with YAML frontmatter:
 
 ```markdown
 ---
@@ -816,7 +846,7 @@ content_hash: 4f1c2e
 
 | Field | Type | Stored as | Used for |
 |-------|------|-----------|----------|
-| `title` | string | `title` (string, at most 300 characters) | Shown with results and citations. Falls back to the first `#` heading |
+| `title` | string | `title` (string, at most 300 characters) | Shown with results and citations. Falls back to the first level-1 heading |
 | `url` | string | `url` (string) | Shown with results and citations |
 | `date` | date or string | `date` (ISO string) | Metadata |
 | `domain` | string | `domain` | Metadata |
@@ -824,11 +854,13 @@ content_hash: 4f1c2e
 | `scraped_at` | datetime or string | `scraped_at` (ISO string) | Metadata |
 | `content_hash` | string | `page_content_hash` | Metadata (`content_hash` is the chunk's own hash) |
 
-All fields are optional and other keys are ignored. A number in `title` or `url` is stored as text (`url: 12345` becomes `"12345"`). A `title` or `url` that is not a plain string or number (a list, a mapping, a date, `.nan`, `true`, or blank) is ignored, so the title falls back to the first `#` heading. A longer title is cut to 300 characters, because it is copied into every chunk. The frontmatter block is removed from the indexed text. If it is not valid YAML, Trove logs a warning and indexes the whole file as text; a file is never dropped because of its frontmatter.
+All fields are optional and other keys are ignored. `title` and `url` are always stored as text: a number becomes a string (`url: 12345` becomes `"12345"`), and a value that is not a plain string or number (a list, a mapping, a date, `.nan`, `true`, or blank) is ignored, so the title falls back to the first level-1 heading (`# Title` or a title underlined with `===`). A title from either source is cut to 300 characters, because it is copied into every chunk. Dates and datetimes in the other fields are stored as ISO strings and lists as comma-separated text. The frontmatter block is removed from the indexed text. If it is not valid YAML, is not a mapping, or has no closing `---`, Trove logs a warning and indexes the whole file as text; a file is never dropped because of its frontmatter.
 
-The body is split at its headings (`#` to `######`, and underlined headings). Each chunk records its heading path as `section`, for example `Pricing changes for 2027 > What is changing`, and long sections are split further to the usual chunk size. Headings inside code blocks are ignored; a code block opened with ```` ``` ```` closes only with at least as many backticks (`~~~` likewise), and a block that is never closed runs to the end of the file.
+The body is split at its headings (`#` to `######`, and headings underlined with `===` or `---`). Each chunk records its heading path as `section`, for example `Pricing changes for 2027 > What is changing`. A section longer than 1500 characters is split further with the recursive splitter, with up to 100 characters of overlap; the overlap shrinks, to nothing if need be, so a chunk never goes over 1500 characters and no text is cut off.
 
-No text is dropped for being short. A section under 80 characters joins the chunk before it if both fit in the chunk size, otherwise the chunk after it, and if neither fits it stays a small chunk of its own. When a chunk holds more than one section, its `section` is the heading path of the section that gives it the most text (the first one on a tie). The other sections' headings stay in the chunk text, so a search for them still finds it.
+Headings inside fenced code blocks are ignored. A fence opened with three or more backticks closes only on a line holding the same character repeated at least as many times and nothing else (`~~~` fences likewise). A backtick line whose info string contains a backtick (```` ```js `x` ````) is ordinary text, not a fence. A fence that is never closed runs to the end of the file.
+
+No text is dropped for being short. A section under 80 characters joins the chunk before it if both fit in 1500 characters, otherwise the chunk after it, and if neither fits it stays a small chunk of its own. When a chunk holds more than one section, its `section` is the heading path of the section that gives it the most text (the first one on a tie). The other sections' headings stay in the chunk text, so a search for them still finds it.
 
 Images are not indexed: `![alt](url)` becomes its alt text and a line holding only images is dropped. To keep image syntax, set this in `client.yaml`:
 
@@ -837,11 +869,28 @@ markdown:
   strip_images: false
 ```
 
-Other file types (PDF, HTML, Word and so on) are parsed as before and have no `section`.
+Other file types (PDF, HTML, Word and so on) go through Unstructured and the title chunker, and have no `section`.
 
 ### Re-running the scraper
 
-Run `ingest.py` after each scrape. Only new and changed files are embedded; identical files are skipped even if the scraper rewrote them. Use `--json` to decide what to do next, for example to alert on `failed`. A page that disappears from `documents/` is reported as `deleted` and the incremental run removes its chunks. Cleaning up chunks left behind in other ways (for example by an interrupted run) is planned work, see [docs/REVIVAL-PLAN.md](docs/REVIVAL-PLAN.md).
+Run `ingest.py` after each scrape. Only new and changed files are embedded. Each file's SHA-256 is kept in the manifest, so a file the scraper rewrote with identical content counts as `unchanged` and is not parsed or embedded again. A changed file has its old chunks removed before it is indexed again. A page that disappears from `documents/` is reported as `deleted` and the incremental run removes its chunks. A file that fails is listed in `failed_files`, left out of the manifest and tried again on the next run. Use `--json` to decide what to do next, for example to alert on `failed`.
+
+Trove removes chunks only for files the manifest lists as changed or deleted. Orphan chunks, whose file is not in the manifest at all (for example a file removed between an interrupted run and its `--resume`), stay in the index until a `--rebuild` without `--resume`. See [Known limits](#known-limits) and the [roadmap](docs/REVIVAL-PLAN.md).
+
+## Known limits
+
+These are facts of how the code works today. The [roadmap](docs/REVIVAL-PLAN.md) lists the ones with planned work.
+
+- Ingestion does not read the `chunking:` section of `client.yaml`. Non-Markdown files always use the title chunker and Markdown always uses the heading splitter, both at 1500 characters with 100 overlap, whatever `strategy`, `max_chunk_size`, `overlap` or `separators` say.
+- In a client that mixes Markdown with spreadsheets, or with non-Markdown text that has more than 10 non-blank lines or more than 5 commas, those chunks sit in a higher [ranking tier](#2-search-hybrid--agentic) and can rank above a better Markdown answer.
+- The recursive splitter drops the separator where it splits, so a split at `". "` loses that full stop. With no separator left it cuts at exactly 1500 characters, which can split a word.
+- The sufficiency check in `core/refinement.py` counts raw line breaks, blank lines included, when it decides whether a chunk holds real content. It affects only whether recursive search runs another refinement round.
+- A clients folder reached through a symlink re-embeds every file whenever the path form changes between the symlink path and the real path, see [Where clients live](#where-clients-live).
+- The MCP server reads `TROVE_CLIENTS_DIR` once at start-up and has no `--clients-dir` flag.
+- Orphan chunks (chunks whose file is not in the manifest, for example after an interrupted run) are not pruned. Chunks of deleted and changed files are removed.
+- `.markdown` is not in the default `documents.extensions` list, so `.markdown` files are skipped unless the client lists it.
+- The plugin loader is not called at start-up, `TROVE_PLUGINS_DIR` is not read, and plugin names in `client.yaml` (for example a plugin embedder as `embedding.model`) are not looked up in the registry.
+- Code indexing is not available on Python 3.13, because tree-sitter-languages has no wheels for it.
 
 ## MCP Server (Claude Code Integration)
 
@@ -853,11 +902,11 @@ Trove includes an MCP (Model Context Protocol) server that allows Claude Code to
 2. Create a Trove client for the API (`python scripts/create_client.py`)
 3. Ingest the docs (`python scripts/ingest.py --client api_name`)
 4. Configure Claude Code to use the Trove MCP server
-5. Claude Code can now search your API docs when helping you code
+5. Claude Code searches your API docs when helping you code
 
 ### Setup
 
-Add to your Claude Code settings (`~/.claude/settings.json`) or project `.mcp.json`:
+Add the server to a project's `.mcp.json` (or for all projects with `claude mcp add --scope user`, see [docs/CLAUDE_CODE_INTEGRATION.md](docs/CLAUDE_CODE_INTEGRATION.md)):
 
 ```json
 {
@@ -873,7 +922,7 @@ Add to your Claude Code settings (`~/.claude/settings.json`) or project `.mcp.js
 }
 ```
 
-With Trove installed as a package (`pip install ".[mcp]"`), use `"command": "trove-server"` with no `args`. It reads clients from `clients/` in the folder it is started in.
+With Trove installed as a package (`pip install ".[mcp]"`), use `"command": "trove-server"` with no `args`. It reads clients from `clients/` in the folder it is started in. To point either form at another clients folder, add `"TROVE_CLIENTS_DIR": "/path/to/clients"` to `env`.
 
 ### Available Tools
 
@@ -942,7 +991,7 @@ You can create custom Claude Code skills in other projects that query Trove for 
 
 ## Development
 
-See `CLAUDE.md` for architecture details, code guidelines, and module reference.
+See `CLAUDE.md` for architecture details, code guidelines, and module reference, [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup, and [docs/REVIVAL-PLAN.md](docs/REVIVAL-PLAN.md) for the roadmap.
 
 ### Running Tests
 

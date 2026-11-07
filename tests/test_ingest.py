@@ -528,6 +528,50 @@ class TestContextualEmbeddingsIntegration:
 
 
 class TestRecursiveChunking:
+    def test_overlap_never_cuts_the_end_of_a_chunk(self):
+        """Regression: the overlap pushed the last chunk past max_chars and its end was cut off."""
+        from core.chunking import chunk_by_recursive
+
+        chunks = chunk_by_recursive("A" * 1400 + "\n\n" + "B" * 1450 + " TAILWORD", 1500, 100)
+        assert any("TAILWORD" in c for c in chunks), [len(c) for c in chunks]
+        assert all(len(c) <= 1500 for c in chunks)
+
+    def test_no_word_is_ever_lost(self):
+        """Seeded property test: every word of a long section is in some chunk."""
+        import random
+
+        from core.chunking import chunk_by_recursive
+
+        rng = random.Random(1234)
+        alphabet = "abcdefghijklmnopqrstuvwxyz"
+
+        def word(i):
+            n = rng.choice([3, 5, 8, 12, 40, 120]) if rng.random() < 0.97 else rng.randint(200, 290)  # below the smallest max_chars
+            return f"w{i}" + "".join(rng.choice(alphabet) for _ in range(n))
+
+        for case in range(320):
+            counter = iter(range(10 ** 6))
+            blocks = []
+            for _ in range(rng.randint(3, 12)):
+                kind = rng.random()
+                if kind < 0.5:
+                    blocks.append(" ".join(word(next(counter)) for _ in range(rng.randint(5, 120))) + ".")
+                elif kind < 0.75:
+                    blocks.append("\n".join("- " + " ".join(word(next(counter)) for _ in range(rng.randint(1, 8)))
+                                            for _ in range(rng.randint(2, 15))))
+                else:
+                    blocks.append("```\n" + "\n".join("    " + " ".join(word(next(counter)) for _ in range(3))
+                                                       for _ in range(rng.randint(2, 20))) + "\n```")
+            text = "\n\n".join(blocks)
+            max_chars = rng.choice([300, 800, 1500])
+            overlap = rng.choice([0, 50, 100, 200])
+            chunks = chunk_by_recursive(text, max_chars=max_chars, overlap=overlap)
+            assert chunks and all(c.strip() for c in chunks), case
+            assert all(len(c) <= max_chars for c in chunks), case
+            words = set(" ".join(chunks).split())
+            missing = [w for w in text.split() if w not in words and w.startswith("w")]
+            assert not missing, (case, max_chars, overlap, missing[:3])
+
     """Tests for 9.2: Recursive chunking strategy."""
 
     def test_chunking_config_has_separators(self):

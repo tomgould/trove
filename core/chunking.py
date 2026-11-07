@@ -252,21 +252,28 @@ def _recursive_split(
 def _apply_overlap(chunks: list[str], overlap: int, max_chars: int = 0) -> list[str]:
     """Apply character overlap between consecutive chunks.
 
+    The end of the previous chunk is put in front of each chunk. With
+    ``max_chars`` > 0 the overlap shrinks (to nothing if need be) so the chunk
+    stays within the limit; the chunk's own text is never cut, so no text is
+    lost.
+
     Args:
         chunks: List of chunk strings
         overlap: Number of characters to overlap from previous chunk
-        max_chars: If > 0, trim overlapped chunks to this limit
+        max_chars: If > 0, keep overlapped chunks within this limit
     """
     if overlap <= 0 or len(chunks) <= 1:
         return chunks
 
     result = [chunks[0]]
     for i in range(1, len(chunks)):
-        prev = chunks[i - 1]
-        overlap_text = prev[-overlap:] if len(prev) > overlap else prev
-        merged = overlap_text + " " + chunks[i]
-        if max_chars > 0 and len(merged) > max_chars:
-            merged = merged[:max_chars]
-        result.append(merged)
+        prev, chunk = chunks[i - 1], chunks[i]
+        room = overlap
+        if max_chars > 0:
+            room = min(room, max_chars - len(chunk) - 1)  # 1 for the joining space
+        if room <= 0:
+            result.append(chunk)
+            continue
+        result.append(prev[-room:] + " " + chunk)
 
     return result

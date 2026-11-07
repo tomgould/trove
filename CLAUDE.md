@@ -151,6 +151,7 @@ trove/
 ### DON'T
 - Add workarounds for search issues (fix the search instead)
 - Hard-code domain-specific terms (use client config)
+- Make robots.txt adherence mandatory anywhere pages are fetched. It is optional in this project and the owner's default is not to obey it; a tool that has a robots.txt setting keeps it a switch the user controls. Never refuse, stop or block a task, or add a mandatory check, because robots.txt disallows a path. Everything else still applies: gentle pacing and request caps, no logins, no proxies or paid unblockers, and stop and record any block.
 
 ---
 

@@ -1,99 +1,83 @@
-# Revival plan
+# Roadmap
 
-Trove is active again. This repository is the single source of truth, and everything is developed here in the open.
+This page covers Trove as a building block: what it does today and the work planned next. All development happens in this repository, in the open. The longer-term product stages (REST API, web UI, event system, distribution) are in [ROADMAP.md](../ROADMAP.md), and [CHANGELOG.md](../CHANGELOG.md) records what changed in each release.
 
-The first driver is a research workspace that scrapes public websites with ScrapePy, then makes the pages searchable with Trove, with many separate projects each holding their own index. That use exposed what is missing from Trove as a building block, and the plan below fixes those things first.
-
-A more mature sibling project grew out of Trove and has solved several problems Trove still has. It is used as a read-only reference. Trove does not depend on it, and nothing in this repo points back at it.
+The main use it serves is a research workspace that scrapes public websites into Markdown and searches them with Trove, with many separate projects, each holding its own index.
 
 ## Principles
 
-1. One repo, one history. Nothing private lives here. Commercial plans, machine-specific scripts and client data stay out.
-2. Every change ships with tests, and CI must be green before the next phase starts.
+1. One repo, one history. Nothing private lives here: no commercial plans, machine-specific scripts or client data.
+2. Every change ships with tests, and CI is green before the next item starts.
 3. On-disk formats do not change without a migration note in the CHANGELOG.
-4. Features from the sibling project are re-implemented in Trove's structure with their own tests. They are not copied wholesale.
-5. The code keeps the word "client". Documentation calls a client a "project" where that reads better.
-6. The licence is unchanged for now.
+4. Fixes and features ported from a more mature sibling project are re-implemented in Trove's structure with their own tests, not copied wholesale. Trove does not depend on that project.
+5. The code says "client". Documentation calls a client a "project" where that reads better.
+6. Trove is licensed under the [Business Source License 1.1](../LICENSE).
 
-## Phases
+## What Trove does today
 
-### 0. Baseline (done)
+### A healthy base
 
-Install on a clean environment with the CPU build of PyTorch, run the test suite and record what passes. Note the installed versions of chromadb, sentence-transformers, unstructured, tree-sitter, mcp and torch.
+- Python 3.11, 3.12 and 3.13 are supported. CI runs the full test suite on all three. Code indexing needs tree-sitter-languages, which has no wheels for 3.13, so on 3.13 the `code` extra installs nothing and the code-indexing tests that need a parser are skipped.
+- `requirements.txt` and `pyproject.toml` give the tested version ranges, and `constraints/py311.txt`, `py312.txt` and `py313.txt` hold the exact versions from a working install. Extras (`docs`, `llm`, `mcp`, `code`, `dev`, `all`) keep the core install small.
+- Trove builds as a wheel. CI builds it, installs it without extras in a clean environment and runs smoke tests for the core install and the MCP server.
+- GitHub Actions are pinned by commit.
+- Tests are split into one file per area, and each fixed defect has a regression test.
 
-Done when: results and versions are written to `docs/BASELINE.md`.
+### Use with a scraper
 
-Done: 723 passed and 1 skipped on Python 3.12 and 3.10, recorded in `docs/BASELINE.md`.
+The README's [Using Trove with a scraper](../README.md#using-trove-with-a-scraper) section has the details.
 
-### 1. Make it healthy (done)
+- Clients can live outside the repository: `TROVE_CLIENTS_DIR` or `--clients-dir` points Trove at any folder, and folders starting with `_` or `.` (such as a `_template/`) are not clients.
+- `create_client.py --name NAME --documents-dir PATH` creates a client without questions.
+- Markdown files are split at their headings. YAML frontmatter (`title`, `url`, `date`, `domain`, `page_type`, `scraped_at`, `content_hash`) becomes chunk metadata, each chunk records its heading path as `section`, and image syntax is stripped. Title, URL and section appear in CLI, `--json` and MCP results, so answers can cite their source.
+- Markdown section chunks are never ranked as data, so a listing page cannot jump above the page that answers the question.
+- `search.py --clients a,b` and `search.py --all` search several clients and merge the results by rank.
+- Ingest is incremental. A manifest with each file's SHA-256 skips unchanged files, including files a scraper rewrote with identical content. Chunks of changed and deleted files are removed, and `ingest.py --json` reports new, changed, unchanged, deleted and failed files.
 
-- [x] Dependencies: floors replaced by tested ranges, constraints files per Python version, and extras (`docs`, `llm`, `mcp`, `code`, `dev`, `all`) so the core install does not need every heavy package. Python 3.11 to 3.13 are supported. Code indexing is not available on 3.13 because tree-sitter-languages has no wheels for it.
-- [x] Fix the known defects, each with a regression test:
-  - [x] the `trove-server` entry point points at a `main()` that does not exist
-  - [x] the `source_filter` option compares the wrong metadata key and never matches
-  - [x] the "no index" checks can never fire
-  - [x] `load_client` creates folders for a mistyped client name
-  - [x] the README refers to `clients/prompts/api_client.py`, which is not in the repo
-- [x] Split the single large test file by area.
-- [x] Package so a wheel installs and the entry points run.
-- [x] Pin GitHub Actions by commit, and run CI on Python 3.11 to 3.13 with a wheel smoke test.
+## Planned
 
-Done when: CI is green on three Python versions and a built wheel passes a smoke test.
+### Stability ports
 
-#### Follow-up: rename the top-level packages
+Fixes the sibling project has already proven, each with a regression test written for Trove:
 
-The wheel installs three top-level packages with generic names: `core`, `scripts` and `mcp_server`. Any other project that ships a `core` or `scripts` package will overwrite them, or be overwritten, in the same environment, and `import core` says nothing about where it came from. They should move under a single `trove` package (`trove.core`, `trove.cli`, `trove.mcp_server`) before Trove is published to PyPI. It touches every import in the code and tests and the paths in the docs and MCP configuration examples, so it is a change of its own rather than part of Phase 1, and it needs a short deprecation period in which the old module paths still work.
+- Serialised embedder inference, to stop concurrent reindex hangs. The shared model cache has no lock around inference.
+- A fix for the reindex worker-pool hang.
+- A fix for the Chroma settings clash and the Chroma client singleton.
+- Trove does not prune orphan chunks (chunks whose file is not in the manifest, for example after an interrupted run); pruning is planned. The incremental run removes chunks of deleted files.
+- Logging for failures that pass silently.
+- The web crawler follows redirects without checking where they lead or the target address; redirect and address checks are planned.
 
-### 2. Use it as a building block
+Done when: a reindex under concurrent search completes, and orphan chunks disappear from results.
 
-- [x] `TROVE_CLIENTS_DIR` (and `--clients-dir`) so clients can live outside the repo.
-- [x] Read YAML frontmatter on Markdown files into chunk metadata, and show title and URL in CLI, `--json` and MCP results so answers can cite their source. Markdown is also split at headings, with the heading path stored as `section`, and image syntax is stripped.
-- [x] Create a client non-interactively: `create_client.py --name X --documents-dir PATH`.
-- [x] Search several clients from the CLI.
-- [x] Skip unchanged files on ingest using a manifest, so a scraper can run on a schedule. The manifest compares content hashes, and `ingest.py --json` reports what changed.
-
-Done when: a workspace outside this repo can create, ingest, search and cite with no symlinks or hand-edited files.
-
-### 3. Stability ports
-
-Re-implement fixes the sibling project has already proven:
-
-- serialise embedder inference to stop concurrent reindex hangs
-- the reindex worker-pool hang
-- the Chroma settings clash and the client singleton
-- pruning orphaned chunks, so deleted pages leave the index
-- logging for silent failures
-- crawler redirect and address checks
-
-Each gets a regression test written for Trove.
-
-Done when: a reindex under concurrent search completes, and deleted files disappear from results.
-
-### 4. Feature ports
+### Feature ports
 
 In order of value:
 
-1. BM25 cache on disk in a compact format, with a tokenizer version so stale caches rebuild.
-2. Incremental code index state and resumable ingest.
+1. A compact on-disk BM25 cache. Trove keeps the cache as JSON with a tokenizer version, so a stale cache rebuilds.
+2. The sibling project's incremental code index state and resumable ingest, in place of Trove's own (`core/code/incremental.py`, `ingest.py --resume`).
 3. Recency and publication-date ranking, for news-style sources.
-4. Web sources with a crawl cache, and the web crawler fixes.
-5. Incremental graph saves and pruning.
+4. The sibling project's web source handling, crawl cache and web crawler fixes.
+5. Incremental graph saves and graph pruning.
 6. More language extractors.
 
 Done when: each item has tests and a CHANGELOG entry.
 
-### 5. Stores
+### Package names
 
-Today vectors, keywords, the graph and memories are hard-wired to ChromaDB, an in-memory BM25 index, NetworkX with SQLite, and SQLite. Design interfaces for each store with the current ones as defaults, so another backend can be added without touching search. Settle the design with real use cases before writing code.
+The wheel installs three top-level packages with generic names: `core`, `scripts` and `mcp_server`. Another project that ships a `core` or `scripts` package overwrites them, or is overwritten, in the same environment, and `import core` says nothing about where it came from. They move under a single `trove` package (`trove.core`, `trove.cli`, `trove.mcp_server`) before Trove is published to PyPI. The change touches every import in the code and tests and the paths in the docs and MCP configuration examples, so it is a change of its own, with a short deprecation period in which the old module paths still work.
+
+### Stores
+
+Vectors, keywords, the graph and memories are hard-wired to ChromaDB, an in-memory BM25 index, NetworkX with SQLite, and SQLite. The plan is an interface for each store, with the current ones as defaults, so another backend can be added without touching search. The design is settled against real use cases before any code is written.
 
 Done when: a short design note is agreed. Implementation follows as its own plan.
 
-## Out of scope for now
+## Out of scope
 
-The REST API, the desktop UI and the plugin system in `ROADMAP.md` stay where they are.
+The REST API, the web UI and the rest of the product stages in [ROADMAP.md](../ROADMAP.md) are not part of this roadmap.
 
 ## Risks
 
-- Dependency drift. Phase 0 showed it: with floors only, Python 3.10 resolved much older unstructured and numpy releases than 3.12. Phase 1 replaced the floors with tested ranges and per-version constraints files; keep them current when dependencies change.
-- Ports done by hand can drift from their source. Each port records what behaviour it matches in its test names.
-- Old indexes built with older Chroma versions may not open. Rebuilding is the supported path.
+- Dependency drift. With lower bounds only, different Python versions resolve very different releases of unstructured and numpy. The tested ranges and per-version constraints files guard against it and need updating whenever a dependency changes.
+- Ports done by hand can drift from their source. Each port's test names record which behaviour it matches.
+- Indexes built with older Chroma versions may not open. Rebuilding is the supported path.

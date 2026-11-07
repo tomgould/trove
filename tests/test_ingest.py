@@ -572,6 +572,48 @@ class TestRecursiveChunking:
             missing = [w for w in text.split() if w not in words and w.startswith("w")]
             assert not missing, (case, max_chars, overlap, missing[:3])
 
+    def test_overlap_starts_on_a_word_boundary(self):
+        """Regression: the overlap was a raw character slice, so chunks started mid-word."""
+        import random
+
+        from core.chunking import chunk_by_recursive
+
+        rng = random.Random(7)
+        words = [f"w{i}" + "x" * rng.randint(2, 11) for i in range(400)]
+        text = ". ".join(" ".join(words[i:i + 9]) for i in range(0, len(words), 9)) + "."
+        vocabulary = {w.strip(".") for w in text.split()}
+        chunks = chunk_by_recursive(text, max_chars=200, overlap=60)
+        assert len(chunks) > 5
+        for chunk in chunks[1:]:
+            first = chunk.split()[0].strip(".")
+            assert first in vocabulary, chunk[:40]
+
+    def test_overlap_is_dropped_when_no_whole_word_fits(self):
+        """A previous chunk ending in one long word gives no overlap rather than a fragment."""
+        from core.chunking import _apply_overlap
+
+        result = _apply_overlap(["start " + "y" * 80, "next chunk"], overlap=20)
+        assert result == ["start " + "y" * 80, "next chunk"]
+
+    def test_semantic_hard_split_keeps_words_whole(self):
+        """Regression: a group longer than max_chars was cut at a fixed character count, mid-word."""
+        import numpy as np
+
+        from core.chunking import chunk_by_semantic
+
+        class SameVector:
+            def encode(self, texts, show_progress_bar=False):
+                return np.ones((len(texts), 4))
+
+        sentence_a = " ".join(f"alpha{i}" for i in range(40)) + "."
+        sentence_b = " ".join(f"beta{i}" for i in range(40)) + "."
+        vocabulary = set((sentence_a + " " + sentence_b).split())
+        chunks = chunk_by_semantic([sentence_a + " " + sentence_b], SameVector(), max_chars=150, min_chars=10)
+        assert len(chunks) > 2
+        for chunk in chunks:
+            assert len(chunk) <= 150
+            assert set(chunk.split()) <= vocabulary, chunk
+
     """Tests for 9.2: Recursive chunking strategy."""
 
     def test_chunking_config_has_separators(self):

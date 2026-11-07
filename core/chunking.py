@@ -8,6 +8,7 @@ Provides:
 """
 
 import logging
+import re
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -118,14 +119,12 @@ def chunk_by_semantic(
                 chunks.append(" ".join(current))
                 current = []
                 current_len = 0
-            # Hard split
-            text = group_text
-            while len(text) > max_chars:
-                chunks.append(text[:max_chars])
-                text = text[max_chars:]
-            if text:
-                current = [text]
-                current_len = len(text)
+            # Hard split, at whitespace where possible
+            parts = _hard_split(group_text, max_chars)
+            chunks.extend(parts[:-1])
+            if parts:
+                current = [parts[-1]]
+                current_len = len(parts[-1])
         else:
             current.extend(group)
             current_len += group_len + (1 if current_len > 0 else 0)
@@ -249,13 +248,49 @@ def _recursive_split(
     return chunks
 
 
+def _word_tail(text: str, room: int) -> str:
+    """The last ``room`` characters of ``text``, starting on a word boundary.
+
+    When the cut would land inside a word, the partial word is dropped, so the
+    tail starts at the next whole word (or is empty if there is none).
+    """
+    if room <= 0:
+        return ""
+    if room >= len(text):
+        return text.strip()
+    tail = text[-room:]
+    if not text[-room - 1].isspace() and not tail[0].isspace():
+        space = re.search(r"\s", tail)
+        tail = tail[space.end():] if space else ""
+    return tail.strip()
+
+
+def _hard_split(text: str, max_chars: int) -> list[str]:
+    """Split ``text`` into pieces of at most ``max_chars``, at whitespace where possible.
+
+    A run of text with no whitespace longer than ``max_chars`` is still cut at
+    ``max_chars``, since there is nowhere else to cut it.
+    """
+    pieces = []
+    while len(text) > max_chars:
+        cut = max(text.rfind(" ", 0, max_chars + 1), text.rfind("\n", 0, max_chars + 1))
+        if cut <= 0:
+            cut = max_chars
+        pieces.append(text[:cut].rstrip())
+        text = text[cut:].lstrip()
+    if text:
+        pieces.append(text)
+    return pieces
+
+
 def _apply_overlap(chunks: list[str], overlap: int, max_chars: int = 0) -> list[str]:
     """Apply character overlap between consecutive chunks.
 
-    The end of the previous chunk is put in front of each chunk. With
-    ``max_chars`` > 0 the overlap shrinks (to nothing if need be) so the chunk
-    stays within the limit; the chunk's own text is never cut, so no text is
-    lost.
+    The end of the previous chunk is put in front of each chunk, starting on
+    a word boundary (a partial word at the start of the overlap is dropped).
+    With ``max_chars`` > 0 the overlap shrinks (to nothing if need be) so the
+    chunk stays within the limit; the chunk's own text is never cut, so no
+    text is lost.
 
     Args:
         chunks: List of chunk strings
@@ -271,9 +306,10 @@ def _apply_overlap(chunks: list[str], overlap: int, max_chars: int = 0) -> list[
         room = overlap
         if max_chars > 0:
             room = min(room, max_chars - len(chunk) - 1)  # 1 for the joining space
-        if room <= 0:
+        tail = _word_tail(prev, room)
+        if not tail:
             result.append(chunk)
             continue
-        result.append(prev[-room:] + " " + chunk)
+        result.append(tail + " " + chunk)
 
     return result

@@ -307,6 +307,26 @@ class TestSearchSettings:
         with pytest.raises(ConfigError, match=f"search.{key}"):
             search_setting({key: value}, key)
 
+    @pytest.mark.parametrize("key", ["top_k", "rerank_top_n", "adaptive_rerank_depth", "max_chunks_per_source", "heading_boost"])
+    @pytest.mark.parametrize("literal", [".nan", ".inf", "-.inf"])
+    def test_non_finite_values_raise_a_clear_error(self, key, literal):
+        """Regression: heading_boost: .nan passed the check (NaN is never below the minimum)."""
+        import yaml
+
+        from core.client import ConfigError, search_setting
+
+        config = yaml.safe_load(f"{key}: {literal}")
+        with pytest.raises(ConfigError, match=f"search.{key}"):
+            search_setting(config, key)
+
+    def test_validate_config_warns_on_a_nan_heading_boost(self):
+        import yaml
+
+        from core.client import validate_config
+
+        config = {"machine_name": "demo", "search": yaml.safe_load("heading_boost: .nan")}
+        assert any("search.heading_boost" in w for w in validate_config(config))
+
     def test_valid_values_pass_through(self):
         from core.client import search_setting
 
@@ -321,6 +341,10 @@ class _FakeClient:
         self.machine_name = "fake"
         self.has_index = True
         self.search_config = search
+        self.llm_config = {}
+        self.index_path = "unused-index"
+        self.tokenization_config = {}
+        self.embedding_config = {}
 
 
 class _FakeSearcher:
@@ -399,3 +423,37 @@ class TestMcpSettings:
         name = make_client("badsettings", search={"heading_boost": "loud"})
         with pytest.raises(ConfigError, match="search.heading_boost"):
             shared.load_trove_client(name, require_index=False)
+
+
+class TestRunAgentSettings:
+    def test_wrong_setting_stops_with_a_message_not_a_traceback(self, monkeypatch, capsys):
+        import scripts.run_agent as run_agent
+
+        monkeypatch.setattr(run_agent.AgentLoader, "get", lambda self, name: object())
+        monkeypatch.setattr(run_agent, "load_client", lambda name: _FakeClient({"heading_boost": float("nan")}))
+        monkeypatch.setattr(run_agent, "create_provider_from_config", lambda config: object())
+        monkeypatch.setattr("sys.argv", ["run_agent.py", "--agent", "any", "--client", "fake", "a question"])
+
+        with pytest.raises(SystemExit) as exit_info:
+            run_agent.main()
+
+        assert exit_info.value.code == 1
+        err = capsys.readouterr().err
+        assert "search.heading_boost" in err
+        assert "Traceback" not in err
+
+    def test_config_error_outside_searcher_creation_is_reported(self, monkeypatch, capsys):
+        """A ConfigError from anywhere in a run is printed as one line, with a non-zero exit."""
+        import scripts.run_agent as run_agent
+        from core.client import ConfigError
+
+        def fail():
+            raise ConfigError("search.top_k in client.yaml must be a whole number >= 1 (or null), got 'x'")
+
+        monkeypatch.setattr(run_agent, "_main", fail)
+
+        with pytest.raises(SystemExit) as exit_info:
+            run_agent.main()
+
+        assert exit_info.value.code == 1
+        assert capsys.readouterr().err.startswith("Error: search.top_k")

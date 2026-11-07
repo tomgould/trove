@@ -9,6 +9,7 @@ Each client has:
 """
 
 import logging
+import math
 import os
 from pathlib import Path
 from typing import Optional
@@ -211,7 +212,8 @@ def search_setting(search_config: dict, key: str):
     A missing or null value gives the documented default; for
     ``max_chunks_per_source`` null means no limit and gives None. Any other
     value that is not a number of the right kind, or is below the smallest
-    allowed value, raises ConfigError naming the setting.
+    allowed value, or is not finite (NaN or infinity), raises ConfigError
+    naming the setting.
     """
     whole, minimum = _SEARCH_NUMBER_SETTINGS[key]
     value = search_config.get(key)
@@ -220,7 +222,7 @@ def search_setting(search_config: dict, key: str):
             return None
         return DEFAULT_CONFIG["search"][key]
     kinds = int if whole else (int, float)
-    if isinstance(value, bool) or not isinstance(value, kinds) or value < minimum:
+    if isinstance(value, bool) or not isinstance(value, kinds) or not math.isfinite(value) or value < minimum:
         kind = "a whole number" if whole else "a number"
         raise ConfigError(f"search.{key} in client.yaml must be {kind} >= {minimum} (or null), got {value!r}")
     return value
@@ -334,8 +336,10 @@ def validate_config(config: dict) -> list[str]:
             warnings.append(f"search.max_chunks_per_source should be a whole number >= 0 or null, got {cap!r}")
 
         boost = search_cfg.get("heading_boost")
-        if boost is not None and (isinstance(boost, bool) or not isinstance(boost, (int, float)) or boost < 0):
-            warnings.append(f"search.heading_boost should be a number >= 0, got {boost!r}")
+        if boost is not None and (
+            isinstance(boost, bool) or not isinstance(boost, (int, float)) or not math.isfinite(boost) or boost < 0
+        ):
+            warnings.append(f"search.heading_boost should be a finite number >= 0, got {boost!r}")
 
         # MMR lambda: None or 0-1
         mmr = search_cfg.get("mmr_lambda")

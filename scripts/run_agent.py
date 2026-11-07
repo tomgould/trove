@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.client import add_clients_dir_argument, apply_clients_dir_argument
 from core.agents import AgentLoader
-from core.client import load_client, discover_clients, search_setting
+from core.client import ConfigError, load_client, discover_clients, search_setting
 from core.llm import create_provider_from_config
 from core.paths import default_agents_dir
 from core.runner import AgentRunner
@@ -130,6 +130,14 @@ def format_result_json(result):
 
 
 def main():
+    try:
+        _main()
+    except ConfigError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _main():
     parser = argparse.ArgumentParser(
         description="Run Trove agents locally via LM Studio",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -205,6 +213,9 @@ def main():
     # Create searcher
     try:
         searcher = create_searcher(client)
+    except ConfigError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
     except Exception as e:
         print(f"Error creating searcher: {e}", file=sys.stderr)
         sys.exit(1)

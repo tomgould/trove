@@ -252,7 +252,7 @@ Chunks from the Markdown heading splitter are never ranked as data: whatever the
 
 After the tiers, page diversity keeps at most `max_chunks_per_source` (default 2) chunks of one page ahead of other pages. A page is a chunk's `url`, or its source file when it has none. A file whose frontmatter `canonical_url` is another indexed file's `url` on the same host (a print copy, for example) counts as that page; URLs compare without scheme, fragment or trailing slash, with the host in any case and default ports ignored. A `canonical_url` on another host is ignored. The page's further chunks are moved, in order, behind every reranked chunk from other pages rather than dropped. They reach the results only when fewer than `top_k` chunks from other pages remain after `min_score` filtering, so with `min_score: null` a page usually shows at most `max_chunks_per_source` chunks even when it is the only page that matches. Set `max_chunks_per_source: 0` (or `null`) in `search:` to turn it off.
 
-Null `top_k`, `rerank_top_n`, `adaptive_rerank_depth` or `heading_boost` in `search:` means the default. A value of the wrong kind (text, a fraction where a whole number is needed, or a number below the minimum) stops `search.py`, `evaluate.py`, `run_agent.py` and the MCP server with an error naming the setting.
+Null `top_k`, `rerank_top_n`, `adaptive_rerank_depth` or `heading_boost` in `search:` means the default. A value of the wrong kind (text, a fraction where a whole number is needed, a number below the minimum, or `.nan`, `.inf` or `-.inf`) stops `search.py`, `evaluate.py`, `run_agent.py` and the MCP server with an error naming the setting.
 
 ### 3. Response Generation
 

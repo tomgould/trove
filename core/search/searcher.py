@@ -1685,55 +1685,11 @@ class HybridSearcher:
         """
         Reorder chunks to prioritize those containing actual data over references.
 
-        Tier 0: Reference/list spreadsheets (actual data sources)
-        Tier 1: Other spreadsheets
-        Tier 2: Content that looks like data/lists
-        Tier 3: Everything else (explanatory text)
-        Tier 4: Just references to data elsewhere
+        The tiers are described in ``data_tier``.
         """
-        def get_tier(chunk: dict) -> int:
-            source = chunk.get("metadata", {}).get("source_file", "").lower()
-            content = chunk.get("content", "").lower()
-
-            # Spreadsheets - sub-prioritize by type
-            if source.endswith((".xlsx", ".xls", ".csv")):
-                # Reference/list/data spreadsheets are primary data sources
-                if any(term in source for term in ["reference", "list", "countries", "data"]):
-                    return 0  # Highest priority - actual reference data
-                # Forms and assessments are templates, not primary data
-                if any(term in source for term in ["form", "assessment", "template"]):
-                    return 2  # Lower than other spreadsheets
-                return 1  # Other spreadsheets
-
-            # Non-spreadsheet reference files
-            if "reference" in source or "list" in source:
-                return 1
-
-            # Content that looks like data/lists
-            data_indicators = [
-                content.count("\n") > 10,  # Multiple lines (likely a list)
-                "high" in content and any(c in content for c in ["afghanistan", "iran", "korea", "myanmar"]),
-                content.count(",") > 5,  # Comma-separated values
-            ]
-            if any(data_indicators):
-                return 2
-
-            # Check if this is just a reference to data elsewhere
-            reference_patterns = [
-                "refer to appendix",
-                "see appendix",
-                "listed in appendix",
-                "detailed in appendix",
-                "as per appendix",
-            ]
-            if any(p in content for p in reference_patterns):
-                return 4  # Deprioritize references
-
-            return 3
-
         # Sort by tier, then by rerank score
         def sort_key(chunk):
-            tier = get_tier(chunk)
+            tier = data_tier(chunk)
             score = chunk.get("_rerank_score", chunk.get("_combined_score", 0))
             return (tier, -score)  # Lower tier first, higher score first within tier
 
@@ -2041,3 +1997,66 @@ class HybridSearcher:
         else:
             logger.warning(f"Unknown graph search mode '{mode}', falling back to naive")
             return self.search(query=query, top_k=top_k, **kwargs)
+
+
+# More non-blank lines than this makes a chunk look like a list or table.
+DATA_MIN_LINES = 10
+
+
+def data_tier(chunk: dict) -> int:
+    """Rank tier used by HybridSearcher.prioritize_data_chunks (lower comes first).
+
+    Tier 0: Reference/list spreadsheets (actual data sources)
+    Tier 1: Other spreadsheets
+    Tier 2: Content that looks like data/lists
+    Tier 3: Everything else (explanatory text)
+    Tier 4: Just references to data elsewhere
+
+    Chunks from the Markdown section splitter are prose by construction, so
+    they are never put in the data tiers: a listing page or leftover links
+    must not jump above the page that answers the question. Lines are counted
+    without blank ones, so short paragraphs separated by blank lines are not
+    mistaken for a list.
+    """
+    metadata = chunk.get("metadata") or {}
+    source = (metadata.get("source_file") or "").lower()
+    content = (chunk.get("content") or "").lower()
+    is_markdown_section = metadata.get("element_type") == "MarkdownSection"
+
+    # Spreadsheets - sub-prioritize by type
+    if source.endswith((".xlsx", ".xls", ".csv")):
+        # Reference/list/data spreadsheets are primary data sources
+        if any(term in source for term in ["reference", "list", "countries", "data"]):
+            return 0  # Highest priority - actual reference data
+        # Forms and assessments are templates, not primary data
+        if any(term in source for term in ["form", "assessment", "template"]):
+            return 2  # Lower than other spreadsheets
+        return 1  # Other spreadsheets
+
+    if not is_markdown_section:
+        # Non-spreadsheet reference files
+        if "reference" in source or "list" in source:
+            return 1
+
+        # Content that looks like data/lists
+        non_blank_lines = sum(1 for line in content.split("\n") if line.strip())
+        data_indicators = [
+            non_blank_lines > DATA_MIN_LINES,  # Multiple lines (likely a list)
+            "high" in content and any(c in content for c in ["afghanistan", "iran", "korea", "myanmar"]),
+            content.count(",") > 5,  # Comma-separated values
+        ]
+        if any(data_indicators):
+            return 2
+
+    # Check if this is just a reference to data elsewhere
+    reference_patterns = [
+        "refer to appendix",
+        "see appendix",
+        "listed in appendix",
+        "detailed in appendix",
+        "as per appendix",
+    ]
+    if any(p in content for p in reference_patterns):
+        return 4  # Deprioritize references
+
+    return 3

@@ -422,6 +422,42 @@ class TestPrioritizeDataChunks:
         s = self._make_searcher()
         assert s.prioritize_data_chunks([]) == []
 
+    def test_blank_line_separated_prose_is_not_data(self):
+        """Regression: raw newlines were counted, so blank lines between short paragraphs made prose 'data'."""
+        s = self._make_searcher()
+        prose = "\n\n\n".join(["Opening hours", "We open at nine", "Closed on Mondays",
+                                  "Parking behind the shop", "Ask at the till"])
+        assert prose.count("\n") > 10
+        chunks = [
+            {"content": "the answer", "metadata": {"source_file": "hours.pdf"}, "_rerank_score": 0.9},
+            {"content": prose, "metadata": {"source_file": "notes.txt"}, "_rerank_score": 0.1},
+        ]
+        assert s.prioritize_data_chunks(chunks)[0]["metadata"]["source_file"] == "hours.pdf"
+
+    def test_csv_like_text_is_still_data(self):
+        s = self._make_searcher()
+        rows = "\n".join(f"row{i};{i * 3};{i * 7}" for i in range(12))
+        chunks = [
+            {"content": "some explanation", "metadata": {"source_file": "guide.pdf"}, "_rerank_score": 0.9},
+            {"content": rows, "metadata": {"source_file": "export.txt"}, "_rerank_score": 0.1},
+        ]
+        assert s.prioritize_data_chunks(chunks)[0]["metadata"]["source_file"] == "export.txt"
+
+    def test_markdown_sections_are_never_data(self):
+        """Regression: a listing page or nav leftovers jumped above the right page whatever its score."""
+        s = self._make_searcher()
+        listing = "# News\n\n" + "\n".join(f"- [Story {i}](/news/{i}), a, b, c, d, e" for i in range(15))
+        chunks = [
+            {"content": "Park behind the shop.", "metadata": {"source_file": "parking.md",
+                                                            "element_type": "MarkdownSection"}, "_rerank_score": 2.0},
+            {"content": listing, "metadata": {"source_file": "news/_index.md", "element_type": "MarkdownSection"},
+             "_rerank_score": -11.0},
+            {"content": "x", "metadata": {"source_file": "checklist.md", "element_type": "MarkdownSection"},
+             "_rerank_score": -12.0},
+        ]
+        assert [c["metadata"]["source_file"] for c in s.prioritize_data_chunks(chunks)] == [
+            "parking.md", "news/_index.md", "checklist.md"]
+
 
 class TestApplyCodeFilters:
     """Tests for HybridSearcher._apply_code_filters."""

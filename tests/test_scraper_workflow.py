@@ -181,3 +181,78 @@ class TestMultiClientSearch:
         with pytest.raises(SystemExit) as excinfo:
             self._search(two_clients, capsys, monkeypatch, "--client", "alpha", "--all", "valleys")
         assert excinfo.value.code == 2
+
+
+NOISY_PAGES = {
+    "parking.md": ("Parking", "Customers can park for free in the car park behind the bakery on Mill Lane. "
+                   "There are twelve spaces, two of them wide bays near the back door, and street parking is "
+                   "allowed after six in the evening."),
+    "hours.md": ("Opening hours", "The bakery opens at seven in the morning from Tuesday to Saturday and at "
+                 "eight on Sunday. We close at four in the afternoon, and we are closed all day on Monday."),
+    "starter.md": ("Feeding a sourdough starter", "Feed your sourdough starter once a day when it lives on the "
+                   "counter: discard half, then add equal weights of flour and water. In the fridge, feed it "
+                   "once a week."),
+    "delivery.md": ("Delivery", "We deliver bread to the nearby villages of Ashby, Brook and Coldwell on "
+                    "Wednesday and Friday mornings. Delivery costs two pounds and orders must arrive by noon "
+                    "the day before."),
+    "allergens.md": ("Allergens", "Our walnut loaf and the seeded rye contain tree nuts. Every loaf contains "
+                     "gluten. Ask at the counter for the full allergen sheet before you buy."),
+    "classes.md": ("Bread making classes", "Book a bread making class on the first Saturday of each month. "
+                   "The class lasts three hours, costs forty pounds and you take home two loaves you shaped "
+                   "yourself."),
+}
+
+NOISE_PAGES = {
+    "news/_index.md": "# News\n\n" + "\n\n".join(
+        f"- [{t}](/news/{i})\n\n  {d}" for i, (t, d) in enumerate([
+            ("Saturday classes are back", "Booking opens soon for our bread classes."),
+            ("A new delivery van", "Our van now reaches more villages."),
+            ("Summer opening hours", "We open a little later in August."),
+            ("Parking update", "The council repainted the car park."),
+        ])),
+    "_index.md": "# Mill Lane Bakery\n\n" + "\n\n".join(
+        f"- [{t}](/{t.lower()})" for t in ["Home", "Bread", "Cakes", "Classes", "Delivery", "Parking",
+                                          "Hours", "News", "Contact", "Allergens", "About", "Jobs"]),
+    "contact.md": "# Contact",
+    "rye.md": "# Seeded rye\n\nOur seeded rye is a dense loaf baked with a sourdough starter and sunflower "
+              "seeds.\n\nShare\n\nFacebook\n\nTwitter\n\nEmail\n\nRelated\n\n- [Walnut loaf](/walnut)\n\n"
+              "- [Spelt loaf](/spelt)\n\n- [Delivery](/delivery)\n\nFollow us\n\nInstagram",
+}
+
+NOISY_QUERIES = {
+    "where can I park the car": "parking.md",
+    "what time do you open on Sunday": "hours.md",
+    "how often should I feed my sourdough starter": "starter.md",
+    "do you deliver to nearby villages": "delivery.md",
+    "which loaves contain nuts": "allergens.md",
+    "can I book a bread making class": "classes.md",
+}
+
+
+def test_noisy_pages_do_not_outrank_the_right_page(clients_dir, make_client, capsys, monkeypatch):
+    """Regression: listing pages and pages with Share/Related leftovers counted as 'data' and came first."""
+    import scripts.ingest as ingest_cli
+    import scripts.search as search_cli
+
+    name = make_client("noisy")
+    docs = clients_dir / name / "documents"
+    for rel, (title, body) in NOISY_PAGES.items():
+        (docs / rel).parent.mkdir(parents=True, exist_ok=True)
+        (docs / rel).write_text(f"---\ntitle: {title}\nurl: https://bakery.example/{rel[:-3]}\n---\n# {title}\n\n{body}\n")
+    for rel, text in NOISE_PAGES.items():
+        (docs / rel).parent.mkdir(parents=True, exist_ok=True)
+        (docs / rel).write_text(text + "\n")
+
+    monkeypatch.setattr(sys, "argv", ["ingest", "--clients-dir", str(clients_dir), "--client", name,
+                                      "--json", "--no-code"])
+    ingest_cli.main()
+    assert json.loads(capsys.readouterr().out)["failed"] == 0
+
+    monkeypatch.setenv("TROVE_CLIENTS_DIR", str(clients_dir))
+    firsts = {}
+    for query, expected in NOISY_QUERIES.items():
+        monkeypatch.setattr(sys, "argv", ["search", "--client", name, "--json", "--top-k", "3", query])
+        search_cli.main()
+        results = json.loads(capsys.readouterr().out)["results"]
+        firsts[query] = results[0]["source"] if results else None
+    assert firsts == NOISY_QUERIES, firsts

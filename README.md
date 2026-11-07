@@ -37,7 +37,7 @@ A local-first knowledge engine with hybrid search, source connectors, plugin ext
 - **Ctrl+C Safe**: Each GPU batch is indexed immediately; interrupt loses at most one batch, resume skips already-indexed files
 - **Code Indexing**: Tree-sitter AST parsing for Python, TypeScript, JavaScript, PHP, HTML, CSS, YAML, JSON, Gherkin, Dart
 - **Markdown Sections**: Markdown is split at its headings, with frontmatter and the heading path stored on each chunk (see [Using Trove with a scraper](#using-trove-with-a-scraper))
-- **Chunking Strategies**: Title-based, semantic (split where embedding similarity drops) and recursive (priority-ordered separators) chunkers in `core/chunking.py`. Ingestion uses the title chunker for non-Markdown files; see [Known limits](#known-limits)
+- **Chunking Strategies**: Title-based, semantic (split where embedding similarity drops) and recursive (priority-ordered separators) chunkers in `core/chunking.py`. Ingestion uses the heading splitter for Markdown, the title chunker for other parsed documents, its own email splitter for `.mbox` and the tree-sitter code chunker for code files; see [Known limits](#known-limits)
 - **Contextual Embeddings**: Prepend document context to chunks before embedding
 - **Chunk Quality Validation**: Min-length, alphanumeric, and content-hash deduplication
 
@@ -237,13 +237,13 @@ Query → Contextualize (if follow-up)
 
 The last step sorts results into tiers and orders by rerank score within each tier:
 
-1. Spreadsheets (`.xlsx`, `.xls`, `.csv`) whose file name contains `reference`, `list`, `countries` or `data`
+1. Spreadsheets (`.xlsx`, `.xls`, `.csv`) whose relative path contains `reference`, `list`, `countries` or `data` (a folder name counts, such as `data/`)
 2. Other spreadsheets, and non-spreadsheet files whose path contains `reference` or `list`
-3. Spreadsheets whose file name contains `form`, `assessment` or `template`, and non-Markdown chunks that look like data: more than 10 non-blank lines, more than 5 commas, or the text "high" anywhere in the chunk together with one of a few country names hard-coded in `data_tier`
+3. Spreadsheets whose relative path contains `form`, `assessment` or `template`, and non-Markdown chunks that look like data: more than 10 non-blank lines, more than 5 commas, or the text "high" anywhere in the chunk together with one of a few country names hard-coded in `data_tier`
 4. Everything else
-5. Chunks that only point elsewhere ("see appendix", "refer to appendix" and similar)
+5. Chunks outside tiers 1 to 3 that contain a pointer phrase ("see appendix", "refer to appendix", "listed in appendix", "detailed in appendix" or "as per appendix"), even alongside other real content. They rank below every tier-4 chunk
 
-Chunks from the Markdown heading splitter are never ranked as data: whatever their path or shape, they rank as tier 4, or tier 5 when they only point elsewhere. The tiers come from `data_tier` in `core/search/searcher.py`.
+Chunks from the Markdown heading splitter are never ranked as data: whatever their path or shape, they rank as tier 4, or tier 5 when they contain a pointer phrase. The tiers come from `data_tier` in `core/search/searcher.py`.
 
 ### 3. Response Generation
 
@@ -455,7 +455,7 @@ graph:
   search_mode: "naive"          # Default search: naive, local, global, hybrid, mix
 
 # Optional: Chunking strategy. Client.chunking_config returns these, but ingestion does
-# not pass them to the chunkers (see Known limits): non-Markdown files use the title chunker
+# not pass them to the chunkers (see Known limits): parsed documents use the title chunker
 # and Markdown the heading splitter, both at 1500 characters with 100 overlap
 chunking:
   strategy: "title"             # "title", "semantic", or "recursive"
@@ -726,7 +726,8 @@ python scripts/build_graph.py --all
 # Build even if graph.enabled is false in client.yaml
 python scripts/build_graph.py --client myproject --force
 
-# Graph saves after every batch, so it is safe to cancel mid-run, resumes on next incremental run
+# The graph saves every 5 batches (graph.extract_save_every), so cancelling loses at most
+# the batches since the last save; the next incremental run resumes
 ```
 
 ### Local Agent Runner
@@ -881,7 +882,9 @@ Trove removes chunks only for files the manifest lists as changed or deleted. Or
 
 These are facts of how the code works today. The [roadmap](docs/REVIVAL-PLAN.md) lists the ones with planned work.
 
-- Ingestion does not read the `chunking:` section of `client.yaml`. Non-Markdown files always use the title chunker and Markdown always uses the heading splitter, both at 1500 characters with 100 overlap, whatever `strategy`, `max_chunk_size`, `overlap` or `separators` say.
+- Ingestion does not read the `chunking:` section of `client.yaml`. Parsed documents (PDF, Word, HTML, text, spreadsheets) always use the title chunker and Markdown always uses the heading splitter, both at 1500 characters with 100 overlap, whatever `strategy`, `max_chunk_size`, `overlap` or `separators` say. `.mbox` archives use their own email splitter and code files the tree-sitter code chunker.
+- `ingest.py --client C --path P` without `--resume` clears the client's whole index before it indexes `P`, so everything not under `P` is gone from the index. To index another folder, point `paths.documents` (or `--documents-dir` on `create_client.py`) at it, or give it its own client.
+- Unchanged-file skipping compares the SHA-256 of the whole file, so only byte-identical files are skipped. A scraper that rewrites a page's frontmatter (a new `scraped_at`, for example) with the same body makes that file count as changed and be embedded again.
 - In a client that mixes Markdown with spreadsheets, or with non-Markdown text that has more than 10 non-blank lines or more than 5 commas, those chunks sit in a higher [ranking tier](#2-search-hybrid--agentic) and can rank above a better Markdown answer.
 - The recursive splitter drops the separator where it splits, so a split at `". "` loses that full stop. With no separator left it cuts at exactly 1500 characters, which can split a word.
 - The sufficiency check in `core/refinement.py` counts raw line breaks, blank lines included, when it decides whether a chunk holds real content. It affects only whether recursive search runs another refinement round.

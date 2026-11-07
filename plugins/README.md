@@ -2,6 +2,15 @@
 
 Plugins extend Trove with custom embedding models, chunking strategies, file parsers, rerankers, LLM providers, and merge strategies.
 
+Trove does not load plugins automatically. `core/plugins/loader.py` discovers and registers them, but nothing in Trove calls `load_plugins()` at start-up, and Trove does not look up plugin names from `client.yaml` in the registry. A plugin works today only in your own code that calls the loader and uses the registry. Loading at start-up is planned (see [ROADMAP.md](../ROADMAP.md), Stage 1).
+
+```python
+from pathlib import Path
+from core.plugins.loader import load_plugins
+
+registry = load_plugins(Path("plugins"))
+```
+
 ## Quick Start
 
 Create a Python file in this directory:
@@ -22,12 +31,7 @@ def register(registry):
     registry.register_embedder(MyEmbedder)
 ```
 
-Then reference it in your `client.yaml`:
-
-```yaml
-embedding:
-  model: my_embedder
-```
+After `load_plugins()`, look it up by name with `registry.get_embedder("my_embedder")`. Setting `embedding.model: my_embedder` in `client.yaml` does not use the plugin: Trove passes that name to sentence-transformers.
 
 ## Plugin Structure
 
@@ -36,7 +40,7 @@ A plugin is either:
 - **A single `.py` file** (e.g., `plugins/ollama.py`)
 - **A directory with `__init__.py`** (e.g., `plugins/ollama/__init__.py`)
 
-Every plugin must expose a `register(registry)` function. Trove calls this on startup, passing the global `PluginRegistry`.
+Every plugin must expose a `register(registry)` function. `load_plugins()` calls it with the `PluginRegistry` it fills (a new one unless you pass your own). Files and folders whose names start with `_` or `.` are skipped.
 
 ## Extension Points
 
@@ -156,11 +160,7 @@ class CustomMerge(BaseMergeStrategy):
 
 ## Configuration
 
-The `TROVE_PLUGINS_DIR` environment variable overrides the default `plugins/` directory:
-
-```bash
-export TROVE_PLUGINS_DIR=/path/to/my/plugins
-```
+`load_plugins()` reads the folder you pass it, or `plugins/` relative to the current folder when you pass none. No environment variable changes it.
 
 ## Error Handling
 

@@ -1,6 +1,6 @@
 # Baseline
 
-The state of Trove when it was revived, before any Phase 1 change. It is the reference point for later phases: if a change makes the suite slower, noisier or less complete than this, it shows here.
+A fixed record, linked from CHANGELOG.md: the results of the test suite and the resolved package versions on a clean install, taken before the dependency, Python-support and test-layout work. It does not describe Trove today; the README and [REVIVAL-PLAN.md](REVIVAL-PLAN.md) do, and CHANGELOG.md lists what changed since.
 
 ## How it was run
 
@@ -44,10 +44,3 @@ Each run reported 4 warnings, all `FutureWarning`: three from tree-sitter (`Lang
 | tree-sitter-languages | 1.10.2 | 1.10.2 |
 
 On Python 3.10 the resolver fell back to much older releases of unstructured, numpy and several of their dependencies, because the current releases need Python 3.11 or later. tree-sitter 0.21.3 with tree-sitter-languages 1.10.2 works on both, with the FutureWarning above.
-
-## What changed in Phase 1
-
-- Supported Python is 3.11 to 3.13. 3.10 reached end of life in October 2026, and the current unstructured, numpy and networkx releases no longer support it.
-- tree-sitter-languages has no wheels for Python 3.13, so on 3.13 the `code` extra installs nothing and the code-indexing tests that need a parser are skipped.
-- Dependencies have tested ranges, and `constraints/` holds the exact versions from a working install per Python version.
-- The test suite is split into one file per area. The 724 original tests are all still collected, alongside the new regression tests.

@@ -54,10 +54,10 @@ Keep the three comment lines at the top of the file. Strip the `+cpu` labels, as
 
 ## Code Style
 
-We use [ruff](https://docs.astral.sh/ruff/) for linting and formatting. Pre-commit hooks run automatically, or you can run manually:
+We use [ruff](https://docs.astral.sh/ruff/) for linting and formatting. The pre-commit hooks run ruff on each commit. CI runs the error checks below and fails on them; it also runs `ruff format --check` but only reports the result, because the code is not fully formatted.
 
 ```bash
-ruff check core/ mcp_server/ scripts/
+ruff check --select E9,F63,F7,F82 core/ mcp_server/ scripts/ tests/   # the CI check
 ruff format core/ mcp_server/ scripts/
 ```
 
@@ -87,12 +87,13 @@ See [CLAUDE.md](CLAUDE.md) for detailed architecture documentation.
 1. Create a feature branch from `main`
 2. Make your changes with tests
 3. Run `pytest`: all tests must pass
-4. Run `ruff check`: no lint errors
-5. Submit a PR with a clear description of what and why
+4. Run the CI ruff check above: no errors
+5. Update the docs the change affects (README.md, CLAUDE.md, docs/) in the present tense, and add a CHANGELOG entry
+6. Submit a PR with a clear description of what and why
 
 ## What to Work On
 
-Check the [ROADMAP.md](ROADMAP.md) for planned features. Issues tagged `good first issue` are a great starting point.
+[docs/REVIVAL-PLAN.md](docs/REVIVAL-PLAN.md) lists the near-term planned work, [ROADMAP.md](ROADMAP.md) the product stages, and the README's "Known limits" section the current limits of the code.
 
 ## License
 

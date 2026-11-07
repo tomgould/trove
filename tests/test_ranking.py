@@ -247,7 +247,7 @@ class TestAdaptiveRerank:
         searcher = HybridSearcher(index_path=temp_index)
         assert searcher.adaptive_rerank is True
         assert searcher.adaptive_rerank_threshold == 0.9
-        assert searcher.adaptive_rerank_depth == 15
+        assert searcher.adaptive_rerank_depth == 30
 
     def test_adaptive_rerank_disabled(self, temp_index):
         """Test adaptive rerank can be disabled."""

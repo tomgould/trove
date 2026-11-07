@@ -34,6 +34,8 @@ from core.search.cache import SearchCache, BM25_CACHE_FILENAME
 
 logger = logging.getLogger(__name__)
 
+# The largest number of results one search returns; a larger top_k is lowered to this.
+MAX_TOP_K = 200
 
 
 def chunk_source(chunk: dict) -> str:
@@ -86,7 +88,7 @@ class HybridSearcher:
         # Adaptive reranking
         adaptive_rerank: bool = True,
         adaptive_rerank_threshold: float = 0.9,
-        adaptive_rerank_depth: int = 15,
+        adaptive_rerank_depth: int = 30,
         # Merge strategy
         merge_strategy: str = "weighted",
         rrf_k: int = 60,
@@ -1271,6 +1273,10 @@ class HybridSearcher:
         if query is None:
             return []
 
+        # top_k is honoured up to MAX_TOP_K: the candidate pool is never smaller than top_k
+        top_k = max(1, min(int(top_k), MAX_TOP_K))
+        rerank_top_n = max(int(rerank_top_n), top_k)
+
         # Multi-query dispatch: generate variants, search each, merge via RRF.
         # Bypasses top-level cache intentionally — LLM-generated variants may differ
         # across calls, but individual variant searches ARE cached below.
@@ -1358,8 +1364,9 @@ class HybridSearcher:
         effective_rerank_n = rerank_top_n
         adaptive_applied = False
         if self.adaptive_rerank and merged and merged[0].get("_combined_score", 0) > self.adaptive_rerank_threshold:
-            # High-confidence match - both BM25 and vector agree strongly
-            effective_rerank_n = min(self.adaptive_rerank_depth, rerank_top_n)
+            # High-confidence match - both BM25 and vector agree strongly.
+            # The depth never drops below top_k, so top_k results can still come back.
+            effective_rerank_n = max(min(self.adaptive_rerank_depth, rerank_top_n), top_k)
             adaptive_applied = True
             logger.info(f"High-confidence match (score={merged[0]['_combined_score']:.2f}), reducing rerank depth to {effective_rerank_n}")
 

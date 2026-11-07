@@ -318,7 +318,7 @@ class TestClientConfigStage1:
 
             assert config["adaptive_rerank"] is True
             assert config["adaptive_rerank_threshold"] == 0.9
-            assert config["adaptive_rerank_depth"] == 15
+            assert config["adaptive_rerank_depth"] == 30
             assert config["merge_strategy"] == "weighted"
             assert config["rrf_k"] == 60
             assert config["mmr_lambda"] is None

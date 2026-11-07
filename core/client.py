@@ -143,7 +143,7 @@ DEFAULT_CONFIG = {
         # Adaptive reranking settings
         "adaptive_rerank": True,  # Reduce rerank depth on high-confidence matches
         "adaptive_rerank_threshold": 0.9,  # Combined score threshold to trigger
-        "adaptive_rerank_depth": 15,  # Reduced rerank depth when triggered
+        "adaptive_rerank_depth": 30,  # Reduced rerank depth when triggered (never below top_k)
         # Merge strategy
         "merge_strategy": "weighted",  # "weighted" or "rrf"
         "rrf_k": 60,  # RRF constant (higher = less impact of rank position)

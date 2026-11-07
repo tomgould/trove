@@ -25,7 +25,7 @@ from core.client import add_clients_dir_argument, apply_clients_dir_argument
 from core.client import ClientNotFoundError, load_client, discover_clients
 from core.search import HybridSearcher
 from core.search.merge import merge_client_results
-from core.search.searcher import citation
+from core.search.searcher import MAX_TOP_K, citation
 
 logging.basicConfig(
     level=logging.WARNING,
@@ -67,7 +67,7 @@ def _build_searcher(client, args) -> HybridSearcher:
         # CLI overrides or config defaults
         adaptive_rerank=not args.no_adaptive if args.no_adaptive else search_config.get("adaptive_rerank", True),
         adaptive_rerank_threshold=search_config.get("adaptive_rerank_threshold", 0.9),
-        adaptive_rerank_depth=search_config.get("adaptive_rerank_depth", 15),
+        adaptive_rerank_depth=search_config.get("adaptive_rerank_depth", 30),
         merge_strategy=args.merge_strategy or search_config.get("merge_strategy", "weighted"),
         rrf_k=search_config.get("rrf_k", 60),
         mmr_lambda=args.mmr_lambda if args.mmr_lambda is not None else search_config.get("mmr_lambda"),
@@ -134,6 +134,14 @@ def _print_result(i: int, chunk: dict, args, show_client: bool = False) -> None:
         print(f"    ... ({content.count(chr(10))} more lines)")
 
 
+def _top_k(requested: int) -> int:
+    """``requested`` lowered to MAX_TOP_K, with a note on stderr when it is lowered."""
+    if requested > MAX_TOP_K:
+        print(f"Note: --top-k is limited to {MAX_TOP_K}; showing at most {MAX_TOP_K} results", file=sys.stderr)
+        return MAX_TOP_K
+    return requested
+
+
 def run_search(args):
     """Run a search on one client (--client)."""
     try:
@@ -148,10 +156,12 @@ def run_search(args):
         sys.exit(1)
 
     searcher = _build_searcher(client, args)
-    top_k = args.top_k or client.search_config.get("top_k", 20)
+    top_k = _top_k(args.top_k or client.search_config.get("top_k", 20))
 
     # Run search with quality
-    search_result = searcher.search_with_quality(query=query, top_k=top_k)
+    search_result = searcher.search_with_quality(
+        query=query, top_k=top_k, rerank_top_n=client.search_config.get("rerank_top_n", 50),
+    )
     results = search_result.results
     quality = search_result.quality
 
@@ -214,11 +224,13 @@ def run_multi_search(args, client_names: list[str]):
         print("Error: none of the clients has an index. Run ingestion first.", file=sys.stderr)
         sys.exit(1)
 
-    top_k = args.top_k or 20
+    top_k = _top_k(args.top_k or 20)
     per_client: dict[str, list[dict]] = {}
     for client in clients:
         searcher = _build_searcher(client, args)
-        per_client[client.machine_name] = searcher.search_with_quality(query=query, top_k=top_k).results
+        per_client[client.machine_name] = searcher.search_with_quality(
+            query=query, top_k=top_k, rerank_top_n=client.search_config.get("rerank_top_n", 50),
+        ).results
         searcher.close()
     results = merge_client_results(per_client, top_k=top_k)
 
@@ -264,7 +276,7 @@ Examples:
     parser.add_argument("--clients", help="Search several clients, comma-separated, and merge the results")
     parser.add_argument("--all", action="store_true", help="Search every client that has an index")
     parser.add_argument("--list", action="store_true", help="List available clients")
-    parser.add_argument("--top-k", type=int, help="Number of results")
+    parser.add_argument("--top-k", type=int, help=f"Number of results (at most {MAX_TOP_K})")
     parser.add_argument("--merge-strategy", choices=["weighted", "rrf"], help="Merge strategy override")
     parser.add_argument("--mmr-lambda", type=float, help="MMR diversity (0.0=diverse, 1.0=relevant)")
     parser.add_argument("--no-adaptive", action="store_true", help="Disable adaptive reranking")

@@ -234,7 +234,7 @@ def load_trove_client(client_name: str, require_index: bool = True) -> tuple[Cli
         # Adaptive reranking
         adaptive_rerank=client.search_config.get("adaptive_rerank", True),
         adaptive_rerank_threshold=client.search_config.get("adaptive_rerank_threshold", 0.9),
-        adaptive_rerank_depth=client.search_config.get("adaptive_rerank_depth", 15),
+        adaptive_rerank_depth=client.search_config.get("adaptive_rerank_depth", 30),
         # Merge strategy
         merge_strategy=client.search_config.get("merge_strategy", "weighted"),
         rrf_k=client.search_config.get("rrf_k", 60),

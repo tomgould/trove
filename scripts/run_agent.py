@@ -49,7 +49,7 @@ def create_searcher(client):
         embedding_config=client.embedding_config,
         adaptive_rerank=search_config.get("adaptive_rerank", True),
         adaptive_rerank_threshold=search_config.get("adaptive_rerank_threshold", 0.9),
-        adaptive_rerank_depth=search_config.get("adaptive_rerank_depth", 15),
+        adaptive_rerank_depth=search_config.get("adaptive_rerank_depth", 30),
         merge_strategy=search_config.get("merge_strategy", "weighted"),
         rrf_k=search_config.get("rrf_k", 60),
         mmr_lambda=search_config.get("mmr_lambda"),

@@ -166,7 +166,7 @@ Query â†’ BM25 (top rerank_top_n, default 50, at least top_k) + Vector (same) â†
 - **Adaptive reranking**: reduces rerank depth (default 30, never below top_k) on high-confidence matches
 - **top_k**: honoured up to `MAX_TOP_K` (200) in `core/search/searcher.py`
 - **Heading match**: `heading_boost` (default 1.0) times the share of query words in the chunk's title or section path is added to the rerank score
-- **Page diversity**: `max_chunks_per_source` (default 2) chunks per page come before other pages; a file whose `canonical_url` is another file's `url` counts as that page
+- **Page diversity**: `max_chunks_per_source` (default 2) chunks per page come before other pages; a file whose `canonical_url` is another file's `url` on the same host counts as that page
 - **MMR diversity**: penalizes similarity to already-selected results (configurable `mmr_lambda`)
 - **HyDE**: generates hypothetical answer via LLM, embeds alongside raw query for vector search (`search.hyde: true`)
 - **Multi-query / RAG-Fusion**: generates query variants via LLM, searches each, merges via RRF (`search.multi_query: true`)

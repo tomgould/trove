@@ -26,10 +26,11 @@ Trove can now be the search half of a scrape pipeline: clients outside the repos
 ### Search
 - CLI results, `--json` results (new `client`, `title`, `url` and `section` fields; `source` is unchanged) and MCP results show title, URL and section. Generated answers list them in their references.
 - `search.py --clients a,b` and `--all` search several clients and merge the results by rank, each labelled with its client.
-- Page diversity: `search.max_chunks_per_source` (default 2) keeps at most that many chunks of one page ahead of other pages. Further chunks move behind the other results instead of being dropped. The frontmatter field `canonical_url` is now stored, and a file whose `canonical_url` is another indexed file's `url` (a print copy) counts as that page. Set it to 0 or null to turn it off.
+- Page diversity: `search.max_chunks_per_source` (default 2) keeps at most that many chunks of one page ahead of other pages. Further chunks move behind the other results instead of being dropped. The frontmatter field `canonical_url` is now stored, and a file whose `canonical_url` is another indexed file's `url` on the same host (a print copy) counts as that page. Set it to 0 or null to turn it off.
 - Heading match: `search.heading_boost` (default 1.0) adds that much, times the share of the query's words found in a chunk's page title or section path, to its rerank score. Set it to 0 to turn it off.
 - `search.adaptive_rerank_depth` defaults to 30 (was 15), and adaptive reranking never reranks fewer than `top_k` candidates. Searches with a confident top match rerank more candidates and take longer.
-- On a 31-question test set of plain-language questions over scraped health guidance and recipe pages, these changes raised recall@5 from 0.84 to 0.90, recall@10 from 0.94 to 0.97 and MRR from 0.77 to 0.82. Including the page title and section in the embedded text, in the keyword index or in the reranker's input did not help and is not done.
+- Null `top_k`, `rerank_top_n`, `adaptive_rerank_depth` or `heading_boost` in `client.yaml` means the default (`rerank_top_n: null` used to crash the CLI), and a value of the wrong kind stops the CLI and MCP server with an error naming the setting.
+- On a test set of 36 plain-language questions over scraped web pages (31 with an answer in the corpus, which give the scores, and 5 without), these changes raised recall@5 from 0.84 to 0.90, recall@10 from 0.94 to 0.97 and MRR from 0.77 to 0.82. Including the page title and section in the embedded text, in the keyword index or in the reranker's input did not help and is not done.
 
 ### Ingest
 - The manifest keeps a content hash, so files rewritten with identical content are not embedded again.
@@ -42,7 +43,7 @@ Trove can now be the search half of a scrape pipeline: clients outside the repos
 - The recursive chunker cut the end off a chunk when the overlap made it too long, losing text at the end of long sections. The overlap now shrinks to fit, so chunks stay within the size limit and no text is lost.
 - A line like ```` ```js `x` ```` (a backtick in the info string) is no longer treated as the start of a code block.
 - `--top-k 20` and `--top-k 50` returned at most 15 results: adaptive reranking cut the candidates to its depth, and the CLI ignored `rerank_top_n` from `client.yaml`. `top_k` is now honoured up to 200 (a larger value is lowered, and the CLI says so), and the candidate pool grows to `top_k` when it is smaller.
-- Chunks started mid-word: the overlap taken from the previous chunk was a raw slice of its last 100 characters. The overlap now starts on a word boundary, and the semantic chunker's hard split breaks at whitespace. Rebuild an index (`ingest.py --rebuild`) to rechunk files that have not changed.
+- Chunks started mid-word: the overlap taken from the previous chunk was a raw slice of its last 100 characters. The overlap now starts on a word boundary (inside a run of more than 30 characters with no whitespace, such as text written without spaces or a long URL, it keeps the raw characters), and the semantic chunker's hard split breaks at whitespace. Rebuild an index (`ingest.py --rebuild`) to rechunk files that have not changed.
 - A relative `--clients-dir` or `TROVE_CLIENTS_DIR` broke search and `--list` once a client had an index ("relative path can't be expressed as a file URI"). The clients folder is now made absolute when it is chosen, and the index check works with a relative index path too.
 
 ### Migration

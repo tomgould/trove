@@ -314,7 +314,7 @@ python scripts/watch_and_reindex.py --dry-run
 # Knowledge graph
 python scripts/build_graph.py --client example           # Incremental (new chunks only)
 python scripts/build_graph.py --client example --rebuild  # Full rebuild
-# Graph saves after every batch: safe to cancel, resumes on next run
+# Graph saves every 5 batches (graph.extract_save_every): safe to cancel, resumes on next run
 
 # Overnight rebuild (all clients)
 ./overnight-rebuild.sh              # Incremental (changes only)

@@ -161,6 +161,42 @@ class TestSections:
         assert first_heading("no headings") is None
 
 
+class TestFences:
+    """A fence closes only with the same character, at least as many times as it opened."""
+
+    def test_tildes_do_not_close_a_backtick_fence(self):
+        from core.markdown import first_heading, split_sections, strip_images
+
+        text = "# Top\n\n```\n~~~\n# not a heading\n![keep](me.png)\n```\n\n## Next\n\nbody"
+        assert [p for p, _ in split_sections(text)] == [["Top"], ["Top", "Next"]]
+        assert "![keep](me.png)" in strip_images(text)
+        assert first_heading("```\n~~~\n# no\n```\n# Yes\n") == "Yes"
+
+    def test_shorter_fence_does_not_close_a_longer_one(self):
+        from core.markdown import first_heading, split_sections, strip_images
+
+        text = "# Top\n\n````\n```\n# not a heading\n![keep](me.png)\n````\n\n## Next\n\nbody"
+        assert [p for p, _ in split_sections(text)] == [["Top"], ["Top", "Next"]]
+        assert "![keep](me.png)" in strip_images(text)
+        assert first_heading("````\n```\n# no\n````\n# Yes\n") == "Yes"
+
+    def test_longer_closing_fence_closes(self):
+        from core.markdown import split_sections
+
+        text = "# Top\n\n```\ncode\n`````\n\n## Next\n\nbody"
+        assert [p for p, _ in split_sections(text)] == [["Top"], ["Top", "Next"]]
+
+    def test_unclosed_fence_runs_to_the_end(self):
+        from core.markdown import first_heading, split_sections, strip_images
+
+        text = "# Top\n\nintro\n\n````\n```\n# comment\n## also code\n![keep](me.png)\n"
+        sections = split_sections(text)
+        assert [p for p, _ in sections] == [["Top"]]
+        assert "## also code" in sections[0][1]
+        assert "![keep](me.png)" in strip_images(text)
+        assert first_heading("````\n```\n# no\n") is None
+
+
 @pytest.fixture(scope="module")
 def ingestor():
     from core.ingest import DocumentIngestor

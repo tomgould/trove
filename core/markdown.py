@@ -44,6 +44,7 @@ SECTION_SEPARATOR = " > "
 MIN_SECTION_CHARS = 80
 
 _FENCE_RE = re.compile(r"^\s{0,3}(`{3,}|~{3,})")
+_FENCE_CLOSE_RE = re.compile(r"^\s{0,3}(`{3,}|~{3,})\s*$")
 _ATX_RE = re.compile(r"^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$")
 _SETEXT_RE = re.compile(r"^\s{0,3}(=+|-+)\s*$")
 
@@ -116,16 +117,32 @@ def frontmatter_metadata(frontmatter: dict) -> dict:
     return meta
 
 
+def _fence_state(line: str, fence: tuple[str, int] | None) -> tuple[bool, tuple[str, int] | None]:
+    """Track fenced code blocks one line at a time.
+
+    ``fence`` is None outside a fence, or (character, length) of the opening
+    fence. Returns (is_fence_line, new_fence). A fence closes only with the same
+    character repeated at least as many times, and nothing else on the line;
+    a fence that never closes runs to the end of the text.
+    """
+    if fence is None:
+        m = _FENCE_RE.match(line)
+        if m:
+            return True, (m.group(1)[0], len(m.group(1)))
+        return False, None
+    m = _FENCE_CLOSE_RE.match(line)
+    if m and m.group(1)[0] == fence[0] and len(m.group(1)) >= fence[1]:
+        return True, None
+    return False, fence
+
+
 def strip_images(text: str) -> str:
     """Replace Markdown images with their alt text and drop image-only lines."""
     out = []
-    in_fence = False
+    fence = None
     for line in text.split("\n"):
-        if _FENCE_RE.match(line):
-            in_fence = not in_fence
-            out.append(line)
-            continue
-        if in_fence:
+        is_fence, fence = _fence_state(line, fence)
+        if is_fence or fence is not None:
             out.append(line)
             continue
         if _IMAGE_ONLY_LINE_RE.match(line):
@@ -154,7 +171,7 @@ def split_sections(text: str, title: str | None = None) -> list[tuple[list[str],
     sections: list[tuple[list[str], list[str]]] = []
     stack: list[tuple[int, str]] = []
     current: list[str] = []
-    in_fence = False
+    fence = None
 
     def path() -> list[str]:
         names = [name for _, name in stack]
@@ -176,12 +193,12 @@ def split_sections(text: str, title: str | None = None) -> list[tuple[list[str],
     i = 0
     while i < len(lines):
         line = lines[i]
-        if _FENCE_RE.match(line):
-            in_fence = not in_fence
+        is_fence, fence = _fence_state(line, fence)
+        if is_fence:
             current.append(line)
             i += 1
             continue
-        if not in_fence:
+        if fence is None:
             m = _ATX_RE.match(line)
             if m and m.group(2):
                 start_section(len(m.group(1)), _clean_heading(m.group(2)), [line])
@@ -255,12 +272,10 @@ def chunk_markdown(
 def first_heading(text: str) -> str | None:
     """The text of the first level-1 heading, used as the page title when frontmatter has none."""
     lines = text.split("\n")
-    in_fence = False
+    fence = None
     for i, line in enumerate(lines):
-        if _FENCE_RE.match(line):
-            in_fence = not in_fence
-            continue
-        if in_fence:
+        is_fence, fence = _fence_state(line, fence)
+        if is_fence or fence is not None:
             continue
         m = _ATX_RE.match(line)
         if m and len(m.group(1)) == 1 and m.group(2):

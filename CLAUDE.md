@@ -12,18 +12,19 @@ Trove uses proven libraries for document parsing, chunking, and search rather th
 4. **Agentic when needed** - Recursive search, reference resolution, query refinement
 5. **Full audit trail** - Every search step logged for debugging and compliance
 6. **Test with diverse data** - Must work for books, legal docs, real estate, not just compliance
-7. **Local-first LLM** - All LLM processing uses LM Studio locally; no cloud API dependency for core features
-8. **Incremental improvement** - Follow the staged roadmap in `ROADMAP.md`; each stage is independently valuable
+7. **Local-first LLM** - LM Studio is the default provider and no core feature needs a cloud API; Claude is an optional provider
+8. **Incremental improvement** - Work follows the roadmaps; each item is independently valuable
 
 ---
 
 ## Roadmap
 
-See **[ROADMAP.md](ROADMAP.md)** for planned future work. See **[CHANGELOG.md](CHANGELOG.md)** for completed stages.
+- **[docs/REVIVAL-PLAN.md](docs/REVIVAL-PLAN.md)**: what Trove does as a building block today, and the planned stability ports, feature ports, package rename and store interfaces.
+- **[ROADMAP.md](ROADMAP.md)**: the product stages (plugin system, REST API, web UI, events, distribution).
+- **[CHANGELOG.md](CHANGELOG.md)**: what changed in each release.
+- **README "Known limits"**: current limits of the code, stated as facts.
 
-**Completed (Stages 0-11 + Pipeline):** Source connectors (GitHub repo sync, web crawling, incremental caching, MCP tools, CLI), search quality (RRF, MMR, quality indicators), MCP enhancement (cache, multi-client, presets), evaluation framework, codebase health, response quality (citations, reranker, token budgeting), ingestion improvements (semantic chunking, progress tracking, MCP tools), knowledge graph (entity extraction, graph search modes, D3 export), advanced query processing (HyDE, multi-query/RAG-Fusion, BM25 tuning, score normalization), embedding & indexing quality (contextual embeddings, recursive chunking, model benchmarking), scale & performance (HNSW tuning, search result caching), agent orchestration (persistent memory, workflow DAGs, agent templates), ingestion pipeline optimization (producer-consumer GPU pipeline, parallel file parsing, progressive ChromaDB indexing, Ctrl+C resume, batch size 512, git ls-files fast collection, parallel change detection).
-
-**Planned (Stages 12-21):** Plugin system (extension points, registry, discovery), distribution packaging (build/export, PyInstaller, unified CLI — local setup untouched), event system (pub/sub bus, webhooks), REST API (FastAPI, WebSockets, MCP adapter), Flutter Desktop UI (foundation, search, client management, graph explorer, agent chat). See ROADMAP.md for details.
+Docs describe the current state in the present tense. History goes in CHANGELOG.md only.
 
 ---
 
@@ -32,13 +33,20 @@ See **[ROADMAP.md](ROADMAP.md)** for planned future work. See **[CHANGELOG.md](C
 ```
 trove/
 ├── core/
-│   ├── ingest.py             # Document processing with Unstructured
+│   ├── paths.py              # Where the clients and agents folders are
+│   ├── ingest.py             # Document processing with Unstructured, file manifest, incremental diff
+│   ├── markdown.py           # Markdown frontmatter, image stripping, heading splitter
 │   ├── pipeline.py           # Producer-consumer ingestion pipeline (parallel parse → GPU embed → index)
+│   ├── model_cache.py        # Keeps embedding models and rerankers loaded, shared across clients
+│   ├── resource_manager.py   # Probes CPU, RAM and GPU to pick concurrency settings
+│   ├── health.py             # Circuit breaker for the LM Studio connection
+│   ├── reference_config.py   # Configurable reference patterns per domain
+│   ├── logging_config.py     # Audit configuration loading
 │   ├── search/               # Hybrid search package
 │   │   ├── types.py          # SearchQuality, SearchResult dataclasses
 │   │   ├── tokenizer.py      # EnhancedTokenizer, stemming, stop words
 │   │   ├── cache.py          # Search result LRU+TTL cache
-│   │   ├── merge.py          # merge_search_results() for multi-index merging
+│   │   ├── merge.py          # Merging results across indexes and across clients (RRF)
 │   │   └── searcher.py       # HybridSearcher (BM25 + vector + re-ranking + recursive)
 │   ├── llm.py                # LLM integration (LM Studio, Claude)
 │   ├── client.py             # Client loading and configuration
@@ -51,8 +59,9 @@ trove/
 │   ├── ingest_job.py         # Ingestion job management for MCP tools
 │   ├── graph/                # Knowledge graph subsystem
 │   │   ├── models.py         # Entity, Relationship dataclasses
-│   │   ├── store.py          # KnowledgeGraph (NetworkX + JSON persistence)
+│   │   ├── store.py          # KnowledgeGraph (NetworkX + SQLite persistence)
 │   │   ├── extractor.py      # LLM-based entity/relationship extraction
+│   │   ├── progress.py       # Graph build progress tracking
 │   │   ├── search.py         # Graph search modes (local/global/hybrid/mix)
 │   │   └── export.py         # Stats and D3.js export
 │   ├── memory.py             # Persistent memory store (SQLite + vector search)
@@ -62,7 +71,7 @@ trove/
 │   ├── plugins/             # Plugin system
 │   │   ├── interfaces.py    # ABCs: BaseEmbedder, BaseChunker, BaseParser, BaseReranker, BaseLLMProvider, BaseMergeStrategy
 │   │   ├── registry.py      # PluginRegistry: register/lookup by name
-│   │   └── loader.py        # discover_plugins(), load_plugins() from plugins/ dir
+│   │   └── loader.py        # discover_plugins(), load_plugins() from plugins/ dir (not called at start-up)
 │   ├── sources/              # Source connectors for automated document acquisition
 │   │   ├── base.py           # BaseSourceConnector ABC, SyncResult
 │   │   ├── github_connector.py # GitHub repo discovery, clone, sync
@@ -76,8 +85,8 @@ trove/
 │       ├── chunker.py        # Code file chunking orchestration
 │       ├── parser.py         # Tree-sitter parser management
 │       ├── git_utils.py      # Git repository detection, file walking
-│       ├── incremental.py    # Chunk ID generation, deduplication
-│       └── extractors/       # Language-specific extractors (Python, TS, JS, PHP, CSS, HTML, YAML, JSON, Gherkin)
+│       ├── incremental.py    # Incremental code indexing state (file hashes and mtimes)
+│       └── extractors/       # Language-specific extractors (Python, TS, JS, PHP, CSS, HTML, YAML, JSON, Gherkin, Dart)
 ├── mcp_server/
 │   ├── server.py             # MCP server entry point, tool definitions, dispatcher
 │   ├── shared.py             # Shared state, cache, helpers
@@ -117,8 +126,11 @@ trove/
 │   ├── create_client.py      # Interactive client creation wizard
 │   ├── mcp_server.py         # MCP server launch script
 │   ├── run_agent.py          # CLI for running agents locally via LM Studio
+│   ├── benchmark_embeddings.py # Compare embedding models on an eval dataset
 │   ├── sync_prompts.py       # Sync prompts from prompts.chat (needs the optional client, not in this repo)
-│   └── sources.py            # CLI for source connectors (connect, crawl, sync, list)
+│   ├── sources.py            # CLI for source connectors (connect, crawl, sync, list)
+│   └── list_docs.sh          # Inventory of the office documents and PDFs in a folder
+├── overnight-rebuild.sh      # Reindex and rebuild graphs for a list of clients
 ├── constraints/               # Exact versions from a working install, per Python version
 └── tests/                     # One test file per area, shared fixtures in conftest.py, install checks in smoke/
 ```
@@ -145,7 +157,7 @@ trove/
 ## Search Pipeline
 
 ```
-Query → BM25 (top 50) + Vector (top 50) → Merge (weighted or RRF) → Rerank (cross-encoder) → MMR diversity → Results + SearchQuality
+Query → BM25 (top rerank_top_n, default 50) + Vector (same) → Merge (weighted or RRF) → Rerank (cross-encoder) → MMR diversity → Data-first ordering (data_tier) → Results + SearchQuality
 ```
 
 - **Weighted merge** (default): normalizes scores to 0-1, combines with configurable weights
@@ -165,7 +177,13 @@ Query → BM25 (top 50) + Vector (top 50) → Merge (weighted or RRF) → Rerank
 
 Enabled via `code:` section in `client.yaml`. Uses tree-sitter AST parsing for intelligent chunking.
 
-**Supported languages:** Python, TypeScript/TSX, JavaScript/JSX, PHP, HTML/Vue/Svelte, CSS/SCSS, YAML, JSON, Gherkin
+**Supported languages:** Python, TypeScript/TSX, JavaScript/JSX, PHP, HTML/Vue/Svelte/MDX, CSS/SCSS/Sass/Less, YAML, JSON, Gherkin, Dart. Code indexing needs tree-sitter-languages, which has no wheels for Python 3.13.
+
+---
+
+## Markdown and Ranking
+
+Markdown files (`.md` by default) skip Unstructured and go through `core/markdown.py`: frontmatter becomes chunk metadata, images become their alt text, and the body is split at headings with the heading path stored as `section`. `data_tier()` in `core/search/searcher.py` orders final results by tier, and Markdown section chunks are never put in the data tiers. README "Using Trove with a scraper" and "Known limits" describe the exact rules.
 
 **Code priority** (when docs may be outdated):
 ```yaml
@@ -191,7 +209,7 @@ paths:
   prompts: "prompts"
 
 embedding:
-  model: all-MiniLM-L6-v2      # or bge-base-en-v1.5 (768d)
+  model: all-MiniLM-L6-v2      # or BAAI/bge-base-en-v1.5 (768d)
   dimension: 384                # must match model
   contextualize: false          # Prepend document context to chunks before embedding
   hnsw_ef_construction: 200     # HNSW build-time: neighbor list size (requires reindex)
@@ -209,14 +227,14 @@ search:
   mmr_lambda: null              # null=disabled, 0.0-1.0
   adaptive_rerank: true
   reranker: "local"             # "local" or "api"
-  # Stage 8: Advanced Query Processing
+  # Advanced query processing
   bm25_k1: 1.5                  # BM25 term frequency saturation (>0)
   bm25_b: 0.75                  # BM25 document length normalization (0-1)
   score_normalization: "minmax"  # "minmax", "zscore", or "raw"
   hyde: false                   # HyDE: generate hypothetical doc for vector search
   multi_query: false            # Multi-query: generate variants and merge via RRF
   multi_query_count: 3          # Number of query variants (2-7)
-  # Stage 10: Scale & Performance
+  # Search result caching
   cache_ttl: 300                # Search cache TTL in seconds (0 = disabled)
   cache_max_size: 128           # Max cached queries per client
 
@@ -233,6 +251,8 @@ llm:
   code_budget_ratio: 0.3
   reference_budget_ratio: 0.1
 
+# Returned by Client.chunking_config but not passed to the chunkers by ingestion
+# (README "Known limits"): ingestion always uses 1500 characters with 100 overlap
 chunking:
   strategy: "title"             # "title", "semantic", or "recursive"
   max_chunk_size: 1500
@@ -253,8 +273,8 @@ sources:
       stay_in_path: true
       max_pages: 500
 
-# Optional sections: source_sync, graph, audit, code
-# See existing client configs for examples
+# Optional sections: documents, markdown, references, source_sync, graph, audit, code
+# README "Client Configuration" shows each one; clients/example/client.yaml is a working example
 ```
 
 ---
@@ -265,9 +285,15 @@ sources:
 # Ingestion
 python scripts/ingest.py --client example              # Incremental (default)
 python scripts/ingest.py --client example --rebuild     # Full rebuild
-python scripts/ingest.py --client example --rebuild-code # Code only
+python scripts/ingest.py --client example --rebuild-code # Rebuild the code index only, from scratch
 python scripts/ingest.py --client example --sync-sources # Sync sources before ingest
-python scripts/ingest.py --all                          # All clients
+python scripts/ingest.py --client example --json         # JSON summary of new/changed/unchanged/deleted/failed files
+python scripts/ingest.py --all                          # All clients (incremental unless --rebuild)
+
+# Clients outside the repo: TROVE_CLIENTS_DIR, or --clients-dir on any CLI script
+# (the MCP server reads only TROVE_CLIENTS_DIR)
+python scripts/create_client.py --name news-site --documents-dir /data/news-site --clients-dir ../projects
+python scripts/search.py --clients docs,blog "your query"   # several clients, merged by rank
 
 # Source connectors
 python scripts/sources.py connect github -c myproject --owner myorg  # Connect GitHub org
@@ -288,7 +314,7 @@ python scripts/watch_and_reindex.py --dry-run
 # Knowledge graph
 python scripts/build_graph.py --client example           # Incremental (new chunks only)
 python scripts/build_graph.py --client example --rebuild  # Full rebuild
-# Graph saves after every batch — safe to cancel, resumes on next run
+# Graph saves after every batch: safe to cancel, resumes on next run
 
 # Overnight rebuild (all clients)
 ./overnight-rebuild.sh              # Incremental (changes only)

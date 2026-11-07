@@ -34,6 +34,7 @@ Trove can now be the search half of a scrape pipeline: clients outside the repos
 
 ### Fixes
 - After `trove_ingest_file` or `trove_ingest_url`, searches in the same MCP session found nothing: storing the cached searcher again closed it.
+- A relative `--clients-dir` or `TROVE_CLIENTS_DIR` broke search and `--list` once a client had an index ("relative path can't be expressed as a file URI"). The clients folder is now made absolute when it is chosen, and the index check works with a relative index path too.
 
 ### Migration
 - No index format change. Existing manifests have no hashes and are compared by modification time and size until the next save.

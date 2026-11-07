@@ -732,6 +732,17 @@ class TestHasIndex:
         (client.index_path / INDEX_MARKER_FILE).write_bytes(b"")
         assert client.has_index is True
 
+    def test_relative_index_path(self, clients_dir, make_client, monkeypatch):
+        """Regression: a relative path made as_uri() raise, so a client with an index looked broken."""
+        from core.client import Client, load_client
+
+        client = load_client(make_client("alpha"), clients_dir=clients_dir)
+        self._open_collection(client).add(ids=["c1"], embeddings=[[0.1, 0.2, 0.3]], documents=["hello"])
+        monkeypatch.chdir(clients_dir.parent)
+        relative = Client(Path("clients") / "alpha", client.config)
+        assert not relative.index_path.is_absolute()
+        assert relative.has_index is True
+
 
 class TestClientsDir:
     """TROVE_CLIENTS_DIR and --clients-dir: one place decides where clients live."""
@@ -813,6 +824,77 @@ class TestClientsDir:
         add_clients_dir_argument(parser)
         apply_clients_dir_argument(parser.parse_args(["--clients-dir", str(tmp_path)]))
         assert resolve_clients_dir() == tmp_path
+
+
+class TestRelativeClientsDir:
+    """Regression: a relative --clients-dir or TROVE_CLIENTS_DIR broke search once a client had an index."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_override(self):
+        from core.client import set_clients_dir
+
+        set_clients_dir(None)
+        yield
+        set_clients_dir(None)
+
+    @staticmethod
+    def _run(module_name, argv, capsys, monkeypatch):
+        import importlib
+        import sys
+
+        module = importlib.import_module(f"scripts.{module_name}")
+        monkeypatch.setattr(sys, "argv", [module_name, *argv])
+        module.main()
+        return capsys.readouterr().out
+
+    @pytest.mark.parametrize("given, workdir, clients", [
+        ("projects", "work", "work/projects"),
+        ("./projects", "work", "work/projects"),
+        ("../x/projects", "work", "x/projects"),
+        ("env:projects", "work", "work/projects"),
+    ])
+    def test_ingest_search_and_list(self, given, workdir, clients, tmp_path, capsys, monkeypatch):
+        import json
+
+        from core.client import CLIENTS_DIR_ENV, set_clients_dir
+
+        client_dir = tmp_path / clients / "demo"
+        (client_dir / "documents").mkdir(parents=True)
+        (client_dir / "client.yaml").write_text("name: Demo\nmachine_name: demo\n")
+        (client_dir / "documents" / "rivers.md").write_text(
+            "# Rivers\n\nA river carves its valley and carries silt down to the estuary over many years.\n")
+        (tmp_path / workdir).mkdir(exist_ok=True)
+        monkeypatch.chdir(tmp_path / workdir)
+
+        if given.startswith("env:"):
+            monkeypatch.setenv(CLIENTS_DIR_ENV, given[4:])
+            flag = []
+        else:
+            monkeypatch.delenv(CLIENTS_DIR_ENV, raising=False)
+            flag = ["--clients-dir", given]
+
+        summary = json.loads(self._run("ingest", ["--client", "demo", "--json", "--no-code", *flag], capsys, monkeypatch))
+        assert summary["failed"] == 0 and summary["new"] == 1, summary
+        set_clients_dir(None)
+
+        out = json.loads(self._run("search", ["--client", "demo", "--json", *flag, "river valley silt"],
+                                   capsys, monkeypatch))
+        assert any(r["source"] == "rivers.md" for r in out["results"]), out
+        set_clients_dir(None)
+
+        listing = self._run("search", ["--list", *flag], capsys, monkeypatch)
+        assert "demo" in listing and "error" not in listing, listing
+        assert "ready" in listing, listing
+
+    def test_resolved_folder_is_absolute(self, tmp_path, monkeypatch):
+        from core.client import CLIENTS_DIR_ENV, resolve_clients_dir, set_clients_dir
+
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv(CLIENTS_DIR_ENV, "env-clients")
+        assert resolve_clients_dir() == tmp_path / "env-clients"
+        set_clients_dir("../flag-clients")
+        assert resolve_clients_dir() == tmp_path.parent / "flag-clients"
+        assert resolve_clients_dir("./arg") == tmp_path / "arg"
 
 
 class TestCreateClientNonInteractive:

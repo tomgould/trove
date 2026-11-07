@@ -48,7 +48,15 @@ def set_clients_dir(path: Optional[str | Path]) -> None:
     Pass None to go back to the environment variable and the default.
     """
     global _clients_dir_override
-    _clients_dir_override = Path(path).expanduser() if path else None
+    _clients_dir_override = _absolute(path) if path else None
+
+
+def _absolute(path: str | Path) -> Path:
+    """``path`` with ``~`` expanded, made absolute against the current folder.
+
+    ``..`` is collapsed but symlinks are kept, so a linked folder keeps its name.
+    """
+    return Path(os.path.abspath(Path(path).expanduser()))
 
 
 def resolve_clients_dir(clients_dir: Optional[str | Path] = None) -> Path:
@@ -58,16 +66,19 @@ def resolve_clients_dir(clients_dir: Optional[str | Path] = None) -> Path:
     (``set_clients_dir``), then the TROVE_CLIENTS_DIR environment variable,
     then the default (the repository's ``clients/`` in a checkout, or
     ``./clients`` for an installed copy, see core.paths).
+
+    The result is always absolute: a relative path is taken from the current
+    folder (for --clients-dir, the folder when the flag was read).
     """
     if clients_dir is not None:
-        return Path(clients_dir).expanduser()
+        return _absolute(clients_dir)
     if _clients_dir_override is not None:
         return _clients_dir_override
     env = os.environ.get(CLIENTS_DIR_ENV)
     if env:
-        return Path(env).expanduser()
+        return _absolute(env)
     from core.paths import default_clients_dir
-    return default_clients_dir()
+    return _absolute(default_clients_dir())
 
 
 def add_clients_dir_argument(parser) -> None:
@@ -486,7 +497,7 @@ class Client:
         database file read-only and checks that it holds an embedding. If the
         file cannot be read that way, an existing file counts as an index.
         """
-        db_file = self.index_path / INDEX_MARKER_FILE
+        db_file = _absolute(self.index_path / INDEX_MARKER_FILE)  # as_uri() needs an absolute path
         if not db_file.is_file():
             return False
         import sqlite3

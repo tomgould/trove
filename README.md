@@ -816,17 +816,19 @@ content_hash: 4f1c2e
 
 | Field | Type | Stored as | Used for |
 |-------|------|-----------|----------|
-| `title` | string | `title` | Shown with results and citations. Falls back to the first `#` heading |
-| `url` | string | `url` | Shown with results and citations |
+| `title` | string | `title` (string, at most 300 characters) | Shown with results and citations. Falls back to the first `#` heading |
+| `url` | string | `url` (string) | Shown with results and citations |
 | `date` | date or string | `date` (ISO string) | Metadata |
 | `domain` | string | `domain` | Metadata |
 | `page_type` | string | `page_type` | Metadata |
 | `scraped_at` | datetime or string | `scraped_at` (ISO string) | Metadata |
 | `content_hash` | string | `page_content_hash` | Metadata (`content_hash` is the chunk's own hash) |
 
-All fields are optional and other keys are ignored. The frontmatter block is removed from the indexed text. If it is not valid YAML, Trove logs a warning and indexes the whole file as text; a file is never dropped because of its frontmatter.
+All fields are optional and other keys are ignored. A number in `title` or `url` is stored as text (`url: 12345` becomes `"12345"`). A `title` or `url` that is not a plain string or number (a list, a mapping, a date, `.nan`, `true`, or blank) is ignored, so the title falls back to the first `#` heading. A longer title is cut to 300 characters, because it is copied into every chunk. The frontmatter block is removed from the indexed text. If it is not valid YAML, Trove logs a warning and indexes the whole file as text; a file is never dropped because of its frontmatter.
 
-The body is split at its headings (`#` to `######`, and underlined headings). Each chunk records its heading path as `section`, for example `Pricing changes for 2027 > What is changing`, and long sections are split further to the usual chunk size. Headings inside code blocks are ignored.
+The body is split at its headings (`#` to `######`, and underlined headings). Each chunk records its heading path as `section`, for example `Pricing changes for 2027 > What is changing`, and long sections are split further to the usual chunk size. Headings inside code blocks are ignored; a code block opened with ```` ``` ```` closes only with at least as many backticks (`~~~` likewise), and a block that is never closed runs to the end of the file.
+
+No text is dropped for being short. A section under 80 characters joins the chunk before it if both fit in the chunk size, otherwise the chunk after it, and if neither fits it stays a small chunk of its own. When a chunk holds more than one section, its `section` is the heading path of the section that gives it the most text (the first one on a tie). The other sections' headings stay in the chunk text, so a search for them still finds it.
 
 Images are not indexed: `![alt](url)` becomes its alt text and a line holding only images is dropped. To keep image syntax, set this in `client.yaml`:
 

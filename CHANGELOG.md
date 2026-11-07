@@ -17,6 +17,9 @@ Trove can now be the search half of a scrape pipeline: clients outside the repos
 ### Markdown
 - `.md` and `.markdown` files are split at their headings instead of going through the generic parser. Each chunk has a `section` field with its heading path ("Page title > H1 > H2").
 - YAML frontmatter fields `title`, `url`, `date`, `domain`, `page_type`, `scraped_at` and `content_hash` (stored as `page_content_hash`) become chunk metadata, and the block is removed from the indexed text. Bad frontmatter is logged and the file is indexed whole.
+- `title` and `url` are always stored as strings: a number becomes text, and a value that is not a plain string or number (a list, a mapping, a date, NaN, a boolean, a blank) is ignored. The title is cut to 300 characters.
+- A section under 80 characters joins the chunk before it, or else the one after it, or else stays a chunk of its own; no Markdown text is dropped for being short. A chunk made of several sections takes the heading path of the section that gives it the most text.
+- A code fence closes only with the same character repeated at least as many times as it opened, and an unclosed fence runs to the end of the file.
 - Image syntax is replaced by its alt text, and image-only lines are dropped. `markdown.strip_images: false` in `client.yaml` turns this off.
 - With `embedding.contextualize`, the section is part of the context prefix.
 

@@ -213,6 +213,15 @@ class TestFences:
         assert "![keep](me.png)" in strip_images(text)
         assert first_heading("````\n```\n# no\n````\n# Yes\n") == "Yes"
 
+    def test_backtick_in_info_string_is_not_a_fence(self):
+        """CommonMark: a backtick fence's info string may not contain a backtick."""
+        from core.markdown import split_sections
+
+        text = "# Top\n\n```js `x`\n\n## Next\n\nbody"
+        assert [p for p, _ in split_sections(text)] == [["Top"], ["Top", "Next"]]
+        text = "# Top\n\n~~~js `x`\n# inside\n~~~\n\n## Next\n\nbody"
+        assert [p for p, _ in split_sections(text)] == [["Top"], ["Top", "Next"]]
+
     def test_longer_closing_fence_closes(self):
         from core.markdown import split_sections
 

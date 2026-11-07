@@ -47,7 +47,9 @@ MIN_SECTION_CHARS = 80
 # The stored page title is cut to this length; it is copied into every chunk.
 MAX_TITLE_CHARS = 300
 
-_FENCE_RE = re.compile(r"^\s{0,3}(`{3,}|~{3,})")
+# A backtick fence's info string may not contain a backtick (CommonMark), so
+# "```js `x`" is ordinary text. A tilde fence's info string may.
+_FENCE_RE = re.compile(r"^\s{0,3}(`{3,}(?=[^`]*$)|~{3,})")
 _FENCE_CLOSE_RE = re.compile(r"^\s{0,3}(`{3,}|~{3,})\s*$")
 _ATX_RE = re.compile(r"^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$")
 _SETEXT_RE = re.compile(r"^\s{0,3}(=+|-+)\s*$")

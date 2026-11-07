@@ -1,253 +1,218 @@
-# Trove Roadmap
+# Trove Product Roadmap
 
-Stages 0-11 are complete — see [CHANGELOG.md](CHANGELOG.md) for details. This roadmap covers the next phase: extensibility, API, web UI and distribution.
+This page covers the product stages: extensibility, a REST API, a web UI, events and distribution. The near-term roadmap for Trove as a building block (stability and feature ports, package names, stores) is in [docs/REVIVAL-PLAN.md](docs/REVIVAL-PLAN.md), and [CHANGELOG.md](CHANGELOG.md) records what changed in each release.
 
 Each stage is independently valuable and testable. One stage = one concept.
 
 ## Tech Stack
 
-**Backend (Python):** FastAPI, ChromaDB, sentence-transformers, tree-sitter, httpx, Pydantic, uvicorn
-**Frontend (Web):** React 19, TypeScript, Vite, Tailwind CSS, shadcn/ui, Zustand, TanStack Query
-**Graph Viz:** D3.js / react-force-graph
-**Markdown/Code:** react-markdown, Shiki (VS Code syntax grammar)
-**Distribution:** Docker, pip, PyInstaller
+The stages below plan to use:
+
+- Backend (Python): FastAPI, ChromaDB, sentence-transformers, tree-sitter, httpx, Pydantic, uvicorn
+- Frontend (web): React 19, TypeScript, Vite, Tailwind CSS, shadcn/ui, Zustand, TanStack Query
+- Graph visualisation: D3.js or react-force-graph
+- Markdown and code: react-markdown, Shiki (VS Code syntax grammar)
+- Distribution: Docker, pip, PyInstaller
 
 ---
 
-## Stage 0: Source Connectors ✅
+## Stage 0: Source Connectors (in place)
 
-**Status:** Complete (2026-03-09)
+Trove fetches documents from GitHub repositories and websites, converts them, and keeps them up to date.
 
-**Goal:** Automated document acquisition from GitHub repositories and websites. Trove discovers, fetches, converts, and keeps documents up to date from external sources.
-
-**Design:** not published yet.
-
-**Implemented:**
-- **GitHub Connector** (`core/sources/github_connector.py`) — discover repos from GitHub accounts/orgs, clone/fetch, track changed files. API client with rate limiting, pagination, retries. Tokens via env vars only.
-- **Web Crawler** (`core/sources/web_crawler.py`) — BFS crawl with scope control, HTML→Markdown conversion (markdownify + trafilatura), incremental cache (ETag/content hash).
-- **Shared interface** — `BaseSourceConnector` with `sync()` and `status()`. Source files at `clients/{name}/sources/{github|web}/`, scanned alongside `documents/` during ingestion.
-- **MCP tools** — `trove_connect_github`, `trove_crawl_web`, `trove_sync_sources`, `trove_list_sources`
-- **CLI** — `scripts/sources.py` with `connect github`, `crawl`, `sync`, `list` subcommands
-- **Ingest integration** — `sources/` directory auto-scanned during ingestion, `sync_on_ingest` config flag, `--sync-sources` CLI flag
-- **Tests** — 75+ tests covering connectors, error paths, and integration
-
-**Depends on:** Nothing (self-contained). Optionally integrates with Stage 1 (source connectors as plugins), Stage 3 (events on sync), Stage 2 (REST endpoints).
+- GitHub connector (`core/sources/github_connector.py`): discovers repos from GitHub accounts and orgs, clones and fetches them, and tracks changed files. The API client handles rate limits, pagination and retries. Tokens come from environment variables only.
+- Web crawler (`core/sources/web_crawler.py`): breadth-first crawl with scope control, HTML to Markdown conversion (markdownify and trafilatura), and an incremental cache (ETag and content hash).
+- Shared interface: `BaseSourceConnector` with `sync()` and `status()`. Source files live in `clients/{name}/sources/{github|web}/` and are scanned alongside `documents/` during ingestion.
+- MCP tools: `trove_connect_github`, `trove_crawl_web`, `trove_sync_sources`, `trove_list_sources`.
+- CLI: `scripts/sources.py` with the `connect github`, `crawl`, `sync` and `list` subcommands.
+- Ingest integration: the `sources/` folder is scanned during ingestion, `sync_on_ingest` in `client.yaml` syncs before each ingest, and `ingest.py --sync-sources` syncs on request.
 
 ---
 
-## Stage 1: Plugin System (In Progress)
+## Stage 1: Plugin System (partly in place)
 
-**Goal:** Formal extension points so users can add custom embedding models, chunkers, parsers, rerankers, LLM providers, and merge strategies without modifying core code.
+Formal extension points, so users can add embedding models, chunkers, parsers, rerankers, LLM providers and merge strategies without changing core code.
 
-**Design:** not published yet.
+In place:
 
-**Implemented:**
-- **Abstract base classes** (`core/plugins/interfaces.py`) for 6 extension points: BaseEmbedder, BaseChunker, BaseParser, BaseReranker, BaseLLMProvider, BaseMergeStrategy
-- **Plugin registry** (`core/plugins/registry.py`) — register/lookup by name, duplicate detection
-- **Plugin loader** (`core/plugins/loader.py`) — discovers `.py` files and packages in `plugins/`, calls `register()`, graceful error handling
-- **Plugin authoring guide** — `plugins/README.md` with examples for each extension point
-- **Tests** — 33 tests covering interfaces, registry, and loader
+- Abstract base classes (`core/plugins/interfaces.py`) for six extension points: `BaseEmbedder`, `BaseChunker`, `BaseParser`, `BaseReranker`, `BaseLLMProvider`, `BaseMergeStrategy`.
+- Plugin registry (`core/plugins/registry.py`): register and look up by name, with duplicate detection.
+- Plugin loader (`core/plugins/loader.py`): discovers `.py` files and packages in a plugins folder, calls their `register()`, and logs and skips plugins that fail.
+- Plugin authoring guide: [plugins/README.md](plugins/README.md).
+- The built-in LLM providers (`core/llm.py`) and rerankers (`core/reranker.py`) implement the interfaces.
 
-**Remaining:**
-- **Refactor built-ins** to implement the same interfaces (no behaviour change, just formalising)
-- **Wire loader into startup** — call `load_plugins()` when MCP server starts or ingestion runs
+Planned:
 
-**Depends on:** Nothing (self-contained)
+- Call `load_plugins()` when the MCP server starts and when ingestion runs. Nothing calls it today, so plugins are not loaded.
+- Make the remaining built-ins (embedders, chunkers, parsers, merge strategies) implement the interfaces, with no change in behaviour.
 
----
-
-## Stage 2: REST API
-
-**Goal:** FastAPI HTTP server as the primary programmatic interface. Serves the web UI as static files. All MCP tool functionality exposed as HTTP endpoints. MCP becomes a thin adapter.
-
-**Design:** not published yet.
-
-- **FastAPI server** at `localhost:8420` — Pydantic request/response models, OpenAPI/Swagger docs auto-generated
-- **Static file serving** — built web UI served at `/`, SPA fallback routing for client-side routes
-- **Resource groups:** `/clients`, `/search`, `/ingest`, `/graph`, `/memory`, `/workflows`, `/agents`, `/prompts`, `/sources`, `/webhooks`, `/health`, `/settings`, `/auth`
-- **Source management endpoints** — CRUD for GitHub and web sources per client, trigger sync, view status
-- **WebSocket endpoints** for long-running operations (ingestion progress, graph builds) and a unified event stream
-- **Authentication** — session-based auth with configurable password for remote access, disabled by default for local use. Also supports API key for programmatic access.
-- **MCP adapter** — MCP server calls REST API when server is running, falls back to direct `core/` imports when not
-- **CORS** — configurable allowed origins for remote access (defaults to localhost)
-
-**Architecture:** `Browser / MCP / CLI → REST API (FastAPI) → core/`
-
-**Depends on:** Stage 1 (plugins must be loadable). Event System (Stage 8) can be integrated later for WebSocket event streams.
+Depends on: nothing.
 
 ---
 
-## Stage 3: Web UI Foundation
+## Stage 2: REST API (planned)
 
-**Goal:** React + TypeScript project with navigation shell, dashboard, settings, and API integration. The frame that all screens plug into. Served as static files from the FastAPI backend.
+A FastAPI HTTP server as the main programmatic interface. It serves the web UI as static files and exposes everything the MCP tools do as HTTP endpoints, with MCP as a thin adapter.
 
-**Design:** not published yet.
+- FastAPI server at `localhost:8420`, with Pydantic request and response models and generated OpenAPI docs
+- Static file serving: the built web UI at `/`, with SPA fallback routing
+- Resource groups: `/clients`, `/search`, `/ingest`, `/graph`, `/memory`, `/workflows`, `/agents`, `/prompts`, `/sources`, `/webhooks`, `/health`, `/settings`, `/auth`
+- Source management endpoints: CRUD for GitHub and web sources per client, trigger a sync, view status
+- WebSocket endpoints for long-running operations (ingestion progress, graph builds) and a unified event stream
+- Authentication: session-based, with a configurable password for remote access, off by default for local use, plus API keys for programmatic access
+- MCP adapter: the MCP server calls the REST API when it is running, and imports `core/` directly when it is not
+- CORS: configurable allowed origins for remote access (localhost by default)
 
-- **React 19 + TypeScript + Vite** — fast builds, modern tooling
-- **Tailwind CSS + shadcn/ui** — utility-first styling with high-quality accessible components
-- **API client** — TypeScript HTTP client + WebSocket client for the Trove REST API
-- **TypeScript models** — interfaces matching all API response shapes
-- **Navigation shell** — sidebar with screen switching (Dashboard, Search, Clients, Graph, Chat, Settings)
-- **Dashboard screen** — client list with status, quick search, system status
-- **Settings screen** — backend URL, LLM config, theme, license, plugins
-- **State management** — Zustand for local state, TanStack Query for server state
-- **Dark mode first** — developer tool, dark by default, light mode available
+Architecture: `Browser / MCP / CLI → REST API (FastAPI) → core/`
 
-**Depends on:** Stage 2 (REST API must exist for the web UI to talk to)
-
----
-
-## Stage 4: Search UI
-
-**Goal:** The core search experience — query input, ranked results with quality indicators, source preview.
-
-**Design:** not published yet.
-
-- **Split-panel layout** — query input + filters on the left, ranked results on the right
-- **Search mode selector** — precise, broad, code_first, exhaustive, diverse, graph modes
-- **Client selector** — dropdown or tabs, multi-client search support
-- **Result cards** — score badges, source file, chunk type, expandable full content
-- **Syntax highlighting** — Shiki (VS Code grammar) for code chunks
-- **Search quality footer** — score distribution, timing, strategy, cache hit
-- **Search history** — clickable to re-run
-- **Keyboard shortcuts** — Enter to search, arrow keys to navigate, Escape to clear
-
-**Depends on:** Stage 3 (web UI foundation must exist)
+Depends on: Stage 1 (plugins must be loadable). The event system (Stage 8) can feed the WebSocket event stream later.
 
 ---
 
-## Stage 5: Client & Source Management
+## Stage 3: Web UI Foundation (planned)
 
-**Goal:** CRUD interface for clients with document management, source connector management, ingestion progress, and a creation wizard.
+A React and TypeScript project with a navigation shell, dashboard, settings and API integration: the frame every screen plugs into, served as static files by the FastAPI backend.
 
-**Design:** not published yet.
+- React 19, TypeScript and Vite
+- Tailwind CSS and shadcn/ui
+- API client: a TypeScript HTTP and WebSocket client for the REST API
+- TypeScript models matching the API response shapes
+- Navigation shell: a sidebar with Dashboard, Search, Clients, Graph, Chat and Settings
+- Dashboard: client list with status, quick search, system status
+- Settings: backend URL, LLM config, theme, licence, plugins
+- State: Zustand for local state, TanStack Query for server state
+- Dark mode by default, light mode available
 
-- **Client list** — cards with name, description, chunk count, status badges
-- **Client detail** — form-based config editor (not raw YAML) with validation and tooltips
-- **Document management** — drag-and-drop upload, file browser, bulk import
-- **Source management** — add/remove GitHub accounts and web crawl URLs, trigger sync, view sync status and history
-- **Ingestion progress** — real-time progress bar via WebSocket
-- **Create client wizard** — step-by-step flow
-- **Quick actions** — reindex, build graph, sync sources, delete (with confirmation)
-
-**Depends on:** Stage 3 (web UI foundation must exist)
-
----
-
-## Stage 6: Graph Explorer
-
-**Goal:** Interactive knowledge graph visualisation with entity search and relationship traversal.
-
-**Design:** not published yet.
-
-- **D3.js force-directed layout** — nodes = entities (colour-coded by type), edges = labelled relationships
-- **Canvas rendering** — WebGL/Canvas for performance with large graphs
-- **Zoom, pan, drag** — interactive manipulation
-- **Entity search/filter** — find by name or type
-- **Entity detail panel** — click a node to see description, relationships, source chunks
-- **Cross-navigation** — "Search for this entity" jumps to Search screen
-- **Data source:** `GET /api/v1/graph/export` (D3.js-compatible JSON, already exists)
-
-**Depends on:** Stage 3 (web UI foundation must exist)
+Depends on: Stage 2.
 
 ---
 
-## Stage 7: Agent Chat
+## Stage 4: Search UI (planned)
 
-**Goal:** Conversational interface for running Trove agents with context-aware responses.
+The core search experience: query input, ranked results with quality indicators, source preview.
 
-**Design:** not published yet.
+- Split-panel layout: query and filters on the left, ranked results on the right
+- Search mode selector: precise, broad, code_first, exhaustive, diverse and the graph modes
+- Client selector, with multi-client search
+- Result cards: score badges, source file, chunk type, expandable full content
+- Syntax highlighting for code chunks with Shiki
+- Search quality footer: score distribution, timing, strategy, cache hit
+- Search history, clickable to re-run
+- Keyboard shortcuts: Enter to search, arrow keys to move, Escape to clear
 
-- **Agent selector** — list from agents API, with description
-- **Client selector** — which knowledge base to search
-- **Chat interface** — message bubbles, react-markdown rendering, Shiki code blocks with syntax highlighting
-- **Cited sources** — inline collapsible source references in agent responses
-- **Conversation history** — persisted in browser localStorage, exportable as markdown
-- **Settings per conversation** — top_k, "save to memory" toggle
-
-**Depends on:** Stage 3 (web UI foundation must exist)
-
----
-
-## Stage 8: Event System
-
-**Goal:** Internal pub/sub event bus in `core/` that fires on key actions. Foundation for real-time WebSocket updates in the web UI and webhook integrations.
-
-**Design:** not published yet.
-
-- **Event bus** (`core/events.py`) — simple publish/subscribe within the process. Core modules emit events; any consumer (REST API, MCP, CLI, webhooks) can subscribe.
-- **11 events** covering: client lifecycle, ingestion progress, search completion, graph builds, agent runs
-- **Webhook store** — registration and delivery mechanism in `core/webhooks.py`, HMAC-SHA256 signed payloads, stored in SQLite state DB
-- **Webhook delivery** — async HTTP callbacks via `httpx`, retry on failure
-- **Retrofit** — once built, wire into existing REST API WebSocket endpoints and UI screens for real-time updates
-- Events fire regardless of whether the action was triggered via REST, MCP, or CLI
-
-**Depends on:** Nothing (self-contained). Integrates with Stage 2 (REST API WebSocket endpoints) and Stages 4-7 (UI screens) retroactively.
+Depends on: Stage 3.
 
 ---
 
-## Stage 9: Distribution Packaging
+## Stage 5: Client and Source Management (planned)
 
-**Goal:** Package Trove for installation without requiring a Python development environment.
+- Client list: cards with name, description, chunk count and status
+- Client detail: a form-based config editor with validation and tooltips
+- Document management: drag-and-drop upload, file browser, bulk import
+- Source management: add and remove GitHub accounts and web crawl URLs, trigger a sync, view sync status and history
+- Ingestion progress: a live progress bar over WebSocket
+- Create-client wizard
+- Quick actions: reindex, build graph, sync sources, delete (with confirmation)
 
-**Design:** not published yet.
+Depends on: Stage 3.
 
-- **Docker image** — primary distribution for servers (AWS, self-hosted). `docker run -p 8420:8420 trove`
-- **pip install** — `pip install trove` for Python users, `trove serve` to start
-- **PyInstaller binary** — single-file executable for non-Python users. Bundles Python runtime + all deps + built web UI.
-- **Build script** (`build/export.py`) — exports generic codebase to staging dir, builds web UI, compiles binary. Your local repo never modified.
-- **Unified CLI** — `trove` binary with subcommands (`ingest`, `search`, `serve`, `create-client`, etc.)
+---
 
-**Depends on:** Stage 1 (plugins must be loadable in compiled binary). Stages 2-7 should be complete for the packaged product to be useful.
+## Stage 6: Graph Explorer (planned)
+
+Interactive knowledge graph visualisation with entity search and relationship traversal.
+
+- D3.js force-directed layout: nodes are entities, coloured by type; edges are labelled relationships
+- Canvas or WebGL rendering for large graphs
+- Zoom, pan and drag
+- Entity search and filter by name or type
+- Entity detail panel: description, relationships, source chunks
+- "Search for this entity" jumps to the Search screen
+- Data source: the D3.js-compatible graph export that the `trove_graph_export` MCP tool returns, served by the REST API
+
+Depends on: Stage 3.
+
+---
+
+## Stage 7: Agent Chat (planned)
+
+A conversational interface for running Trove agents.
+
+- Agent selector, listing agents with their descriptions
+- Client selector
+- Chat interface with react-markdown rendering and Shiki code blocks
+- Cited sources as collapsible references in agent responses
+- Conversation history in browser storage, exportable as Markdown
+- Per-conversation settings: `top_k`, "save to memory"
+
+Depends on: Stage 3.
+
+---
+
+## Stage 8: Event System (planned)
+
+An in-process publish/subscribe event bus in `core/` that fires on key actions, as the base for live WebSocket updates and webhooks.
+
+- Event bus (`core/events.py`): core modules emit events; the REST API, MCP, CLI and webhooks can subscribe
+- Events for client lifecycle, ingestion progress, search completion, graph builds and agent runs
+- Webhook store (`core/webhooks.py`): registration and HMAC-SHA256 signed payloads, stored in the SQLite state database
+- Webhook delivery: async HTTP callbacks with `httpx`, retried on failure
+- Events fire whether the action came through REST, MCP or the CLI
+
+Depends on: nothing. Integrates with Stage 2 (WebSocket endpoints) and Stages 4 to 7 (UI screens).
+
+---
+
+## Stage 9: Distribution Packaging (planned)
+
+Installing Trove without a Python development environment.
+
+- Docker image as the main server distribution: `docker run -p 8420:8420 trove`
+- `pip install` with a `trove serve` command. Trove builds as a wheel today, with the `trove-server`, `trove-search`, `trove-ingest`, `trove-sources` and `trove-create-client` commands; it is not on PyPI.
+- PyInstaller binary: a single executable bundling Python, the dependencies and the built web UI
+- Build script (`build/export.py`) that exports the codebase to a staging folder, builds the web UI and compiles the binary
+- Unified CLI: a `trove` command with subcommands (`ingest`, `search`, `serve`, `create-client` and so on)
+
+Depends on: Stage 1 (plugins must load in a compiled binary). Stages 2 to 7 make the packaged product useful.
 
 ---
 
 ## Dependency Graph
 
 ```
-0 (Source Connectors) ✅ — independent, integrates with 1, 2, 5
+0 (Source Connectors), in place, integrates with 1, 2, 5
 1 (Plugins) → 2 (REST API) → 3 (Web UI Foundation)
                                     ↙  ↓  ↓  ↘
                                  4    5    6    7
                               (Search) (Clients) (Graph) (Chat)
                                     ↘  ↓  ↓  ↙
-                                 8 (Events) — retrofit real-time into screens
+                                 8 (Events), real-time updates for the screens
                                        ↓
                                  9 (Distribution)
 ```
 
-Stages 4-7 are independent of each other — build in any order or in parallel.
-Stage 8 (Events) can be built at any point, but maximum value comes after the UI screens exist.
+Stages 4 to 7 are independent of each other and can be built in any order or in parallel. Stage 8 can be built at any point, but gives the most value once the UI screens exist.
 
 ---
 
 ## Cross-Cutting Concerns
 
-These apply across all stages and should be addressed incrementally:
-
 ### Performance
 
-- GPU memory management during ingestion (move models to CPU between batches)
-- BM25 corpus hash optimization for large indices (sampling instead of full hash)
+- Embedding falls back to smaller batches and then to the CPU when the GPU runs out of memory (`core/ingest.py`). Moving models to the CPU between batches during ingestion is planned.
+- The BM25 corpus hash samples content prefixes for indexes of 50,000 chunks or more, instead of hashing every chunk.
 
 ### LLM Configuration
 
-- Per-task model selection (e.g. different model for graph extraction vs search generation)
-- Support for Claude API, Ollama, and OpenAI-compatible providers (not just LM Studio)
-- Currently all LLM tasks share a single `lmstudio_model` per client
+- Providers: LM Studio (OpenAI-compatible, native and Anthropic-compatible endpoints) and Claude through the Anthropic client. Ollama and other OpenAI-compatible servers are planned.
+- All LLM tasks for a client share one model, `llm.lmstudio_model`. Per-task model selection (for example a different model for graph extraction than for answers) is planned.
 
 ### Documentation
 
-- Keep CLAUDE.md in sync with new features as they're added
-- Update README.md with new CLI tools and MCP tools
+- Each change updates README.md, CLAUDE.md and the docs it affects, in the same pull request.
 
-### Backwards Compatibility
+### Compatibility
 
-- All new features are opt-in via `client.yaml`
-- Existing clients work without config changes
-- New config keys have sensible defaults matching current behavior
-
-### Rename: renamed from the earlier working name to Trove ✅
-
-- Renamed all code, MCP tools (`trove_` prefix), env vars, state DB paths
-- Prepared the public `trove` repository for release
+- New features are opt-in through `client.yaml`.
+- Existing clients work without config changes.
+- New config keys default to the existing behaviour.

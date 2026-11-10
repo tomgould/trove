@@ -6,6 +6,7 @@ import os
 from mcp.types import TextContent
 
 from core.client import load_client, discover_clients
+from core.search.chroma_paging import get_all
 
 from mcp_server.shared import (
     CLIENTS_DIR,
@@ -303,7 +304,7 @@ def handle_list_repos(arguments: dict) -> list[TextContent]:
         )]
 
     try:
-        results = searcher.collection.get(include=["metadatas"])
+        results = get_all(searcher.collection, include=["metadatas"])
         repos = {}
         for metadata in results.get("metadatas", []):
             repo_name = metadata.get("repo_name")

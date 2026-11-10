@@ -282,6 +282,7 @@ Trove/
 │   │   ├── tokenizer.py      # EnhancedTokenizer, stemming, stop words
 │   │   ├── cache.py          # Search result LRU+TTL cache
 │   │   ├── merge.py          # Merging results across indexes and across clients (RRF)
+│   │   ├── chroma_paging.py  # Reads a ChromaDB collection in pages (a full get() fails past 32,000 rows)
 │   │   └── searcher.py       # HybridSearcher (BM25 + vector + re-ranking + recursive)
 │   ├── llm.py                # LLM providers (LM Studio, Claude)
 │   ├── client.py             # Client configuration + validation

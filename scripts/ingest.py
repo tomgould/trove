@@ -36,6 +36,7 @@ from core.ingest import (
     save_file_manifest,
 )
 from core.search import HybridSearcher
+from core.search.chroma_paging import get_all
 
 logging.basicConfig(
     level=logging.INFO,
@@ -843,7 +844,7 @@ def show_stats(client_name: str) -> None:
 
     # Count by chunk type if available
     try:
-        results = searcher.collection.get(include=["metadatas"])
+        results = get_all(searcher.collection, include=["metadatas"])
         if results and results.get("metadatas"):
             chunk_types = {}
             languages = {}

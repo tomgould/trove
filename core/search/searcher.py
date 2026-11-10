@@ -31,6 +31,7 @@ from core.reranker import Reranker, create_reranker
 from core.search.types import SearchQuality, SearchResult, DEFAULT_EMBEDDING_MODEL, DEFAULT_RERANKER_MODEL
 from core.search.tokenizer import EnhancedTokenizer, advanced_tokenize, TOKENIZER_VERSION, STOP_WORDS
 from core.search.cache import SearchCache, BM25_CACHE_FILENAME
+from core.search.chroma_paging import get_all
 
 logger = logging.getLogger(__name__)
 
@@ -424,7 +425,7 @@ class HybridSearcher:
 
         if count < self._CORPUS_HASH_SAMPLE_THRESHOLD:
             # Small corpus: full hash (existing behavior)
-            results = self.collection.get(include=["documents"])
+            results = get_all(self.collection, include=["documents"])
             pairs = sorted(zip(results["ids"], results["documents"]))
             for doc_id, doc in pairs:
                 content_prefix = (doc or "")[:100]
@@ -432,7 +433,7 @@ class HybridSearcher:
         else:
             # Large corpus: hash all IDs + sample content
             # Phase 1: fetch IDs only (cheap — just strings)
-            id_results = self.collection.get(include=[])
+            id_results = get_all(self.collection, include=[])
             sorted_ids = sorted(id_results["ids"])
             for doc_id in sorted_ids:
                 h.update(f"{doc_id}\n".encode())
@@ -733,7 +734,7 @@ class HybridSearcher:
         self._known_urls = None
 
         # Get all documents from ChromaDB
-        results = self.collection.get(include=["documents", "metadatas"])
+        results = get_all(self.collection, include=["documents", "metadatas"])
 
         if not results["documents"]:
             logger.warning("No documents in collection for BM25 index")

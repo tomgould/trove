@@ -26,6 +26,7 @@ from sentence_transformers import SentenceTransformer
 
 from core.client import add_clients_dir_argument, apply_clients_dir_argument
 from core.client import load_client
+from core.search.chroma_paging import get_all
 from core.evaluation import load_eval_dataset, compute_retrieval_metrics, EvalResult, aggregate_metrics
 
 logging.basicConfig(
@@ -61,7 +62,7 @@ def load_client_data(client) -> tuple[list[dict], list[dict]]:
 
     try:
         collection = chroma_client.get_collection(client.machine_name)
-        result = collection.get(include=["documents", "metadatas"])
+        result = get_all(collection, include=["documents", "metadatas"])
         chunks = []
         for i, doc_id in enumerate(result["ids"]):
             chunks.append({

@@ -38,6 +38,7 @@ Trove can now be the search half of a scrape pipeline: clients outside the repos
 - `ingest.py --json` prints counts of new, changed, unchanged, deleted and failed files.
 
 ### Fixes
+- An index of more than about 32,000 chunks could not be opened, searched or updated with ChromaDB 1.5: loading the whole index in one call failed with "too many SQL variables". Every full read now goes through `core/search/chroma_paging.py`, which reads 5,000 rows at a time, so an index can grow without a ceiling.
 - After `trove_ingest_file` or `trove_ingest_url`, searches in the same MCP session found nothing: storing the cached searcher again closed it.
 - Markdown chunks no longer jump to the top of results as "data": the data ranking tier skips chunks from the Markdown section splitter, and counts only non-blank lines when it looks for lists. Listing pages and pages with leftover share and related links used to outrank the page that answered the question.
 - The recursive chunker cut the end off a chunk when the overlap made it too long, losing text at the end of long sections. The overlap now shrinks to fit, so chunks stay within the size limit and no text is lost.

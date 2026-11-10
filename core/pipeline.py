@@ -186,7 +186,9 @@ class IngestionPipeline:
     def get_indexed_source_paths(self) -> set[str]:
         """Query ChromaDB for all already-indexed source_path values (for resume)."""
         try:
-            results = self.searcher.collection.get(include=["metadatas"])
+            from core.search.chroma_paging import get_all
+
+            results = get_all(self.searcher.collection, include=["metadatas"])
             paths = set()
             for meta in (results.get("metadatas") or []):
                 sp = meta.get("source_path", "")

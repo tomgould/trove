@@ -28,10 +28,9 @@ def _fetch_chunks_by_ids(
 
     try:
         # Batch fetch from ChromaDB
-        results = searcher.collection.get(
-            ids=chunk_ids,
-            include=["documents", "metadatas"],
-        )
+        from core.search.chroma_paging import get_by_ids
+
+        results = get_by_ids(searcher.collection, chunk_ids, include=["documents", "metadatas"])
     except Exception as e:
         logger.warning(f"Failed to fetch chunks by ID: {e}")
         return []
